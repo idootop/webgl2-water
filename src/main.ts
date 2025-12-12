@@ -1,10 +1,9 @@
+import * as THREE from "three";
 import { Water } from "./water";
 import { Renderer } from "./renderer";
 import { Cubemap } from "./cubemap";
-import { GL, type GLVector } from "./lib/lightgl";
 
-export const gl = GL.create();
-
+// Global error handler
 window.onerror = (event: Event | string) => {
   const errorHtml = String(event)
     .replace(/&/g, "&amp;")
@@ -23,17 +22,130 @@ window.onerror = (event: Event | string) => {
 let water: Water;
 let cubemap: Cubemap;
 let renderer: Renderer;
-let angleX = -25;
+let angleX = 45;
 let angleY = -200.5;
 
 // Sphere physics info
 let useSpherePhysics = false;
-let center: GLVector;
-let oldCenter: GLVector;
-let velocity: GLVector;
-let gravity: GLVector;
+let center: THREE.Vector3;
+let oldCenter: THREE.Vector3;
+let velocity: THREE.Vector3;
+let gravity: THREE.Vector3;
 let radius: number;
 let paused = false;
+
+// Three.js Core
+const sceneRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const camera = new THREE.PerspectiveCamera(
+  45,
+  window.innerWidth / window.innerHeight,
+  0.01,
+  100
+);
+
+let poolWidth = 2;
+let poolLength = 2;
+let containerHeight = 1.4; // Total height (walls)
+let poolDepth = 0; // Current water depth (calculated)
+let waterFillRatio = 0.7; // 0 to 1
+let sphereFloatRatio = 0.1; // 0 to 1 (Ratio of diameter that is above water at equilibrium)
+
+function updatePoolDimensions() {
+  const waterDepth = containerHeight * waterFillRatio;
+  const wallHeight = containerHeight * (1 - waterFillRatio);
+
+  // Update global poolDepth for physics checks (used in update() and dragging)
+  poolDepth = waterDepth;
+
+  renderer.updateDimensions(poolWidth, poolLength, waterDepth, wallHeight);
+  water.updateDimensions(poolWidth, poolLength);
+}
+
+// Create UI
+const uiContainer = document.createElement("div");
+uiContainer.style.position = "absolute";
+uiContainer.style.top = "10px";
+uiContainer.style.right = "10px";
+uiContainer.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+uiContainer.style.padding = "10px";
+uiContainer.style.borderRadius = "5px";
+uiContainer.style.color = "white";
+uiContainer.style.zIndex = "100";
+document.body.appendChild(uiContainer);
+
+const createInput = (
+  label: string,
+  value: number,
+  onChange: (val: number) => void,
+  min: number = 0.1,
+  max: number = 5,
+  step: number = 0.1
+) => {
+  const div = document.createElement("div");
+  div.style.marginBottom = "5px";
+
+  const lbl = document.createElement("label");
+  lbl.textContent = label + ": ";
+  lbl.style.display = "inline-block";
+  lbl.style.width = "80px"; // Increased width for longer labels
+  div.appendChild(lbl);
+
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+  input.style.width = "100px";
+  input.oninput = (e) => {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    span.textContent = val.toFixed(2);
+    onChange(val);
+  };
+  div.appendChild(input);
+
+  const span = document.createElement("span");
+  span.textContent = value.toFixed(2);
+  span.style.marginLeft = "5px";
+  div.appendChild(span);
+
+  uiContainer.appendChild(div);
+};
+
+createInput("Width", poolWidth, (val) => {
+  poolWidth = val;
+  updatePoolDimensions();
+});
+createInput("Length", poolLength, (val) => {
+  poolLength = val;
+  updatePoolDimensions();
+});
+createInput("Total Height", containerHeight, (val) => {
+  containerHeight = val;
+  updatePoolDimensions();
+});
+createInput(
+  "Water Fill",
+  waterFillRatio,
+  (val) => {
+    waterFillRatio = val;
+    updatePoolDimensions();
+  },
+  0.05,
+  1.0,
+  0.05
+);
+
+createInput(
+  "Sphere Float",
+  sphereFloatRatio,
+  (val) => {
+    sphereFloatRatio = val;
+  },
+  0.0,
+  0.9,
+  0.05
+);
 
 window.onload = function () {
   const ratio = window.devicePixelRatio || 1;
@@ -41,48 +153,56 @@ window.onload = function () {
   function onresize(): void {
     const width = innerWidth - 20;
     const height = innerHeight;
-    gl.canvas.width = width * ratio;
-    gl.canvas.height = height * ratio;
-    gl.canvas.style.width = width + "px";
-    gl.canvas.style.height = height + "px";
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.matrixMode(gl.PROJECTION);
-    gl.loadIdentity();
-    gl.perspective(45, gl.canvas.width / gl.canvas.height, 0.01, 100);
-    gl.matrixMode(gl.MODELVIEW);
-    draw();
+    sceneRenderer.setSize(width, height);
+    sceneRenderer.setPixelRatio(ratio);
+
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
   }
 
-  document.body.appendChild(gl.canvas);
-  gl.clearColor(0, 0, 0, 1);
+  document.body.appendChild(sceneRenderer.domElement);
+  sceneRenderer.setClearColor(new THREE.Color(0, 0, 0));
 
-  water = new Water();
-  renderer = new Renderer();
-  cubemap = new Cubemap({
-    xneg: document.getElementById("xneg") as HTMLImageElement,
-    xpos: document.getElementById("xpos") as HTMLImageElement,
-    yneg: document.getElementById("ypos") as HTMLImageElement,
-    ypos: document.getElementById("ypos") as HTMLImageElement,
-    zneg: document.getElementById("zneg") as HTMLImageElement,
-    zpos: document.getElementById("zpos") as HTMLImageElement,
-  });
-
+  // Check for floating point texture support
   if (
-    !(water.textureA as any).canDrawTo ||
-    !(water.textureA as any).canDrawTo()
+    !sceneRenderer.capabilities.isWebGL2 &&
+    !sceneRenderer.extensions.get("OES_texture_float")
   ) {
     throw new Error(
       "Rendering to floating-point textures is required but not supported"
     );
   }
+  // Linear filtering for float textures is also needed
+  sceneRenderer.extensions.get("OES_texture_float_linear");
 
-  center = oldCenter = new GL.Vector(-0.4, -0.75, 0.2);
-  velocity = new GL.Vector();
-  gravity = new GL.Vector(0, -4, 0);
+  function getEl(id: string): HTMLImageElement {
+    const el = document.getElementById(id) as HTMLImageElement;
+    if (!el) {
+      throw new Error(`Could not find element with id: ${id}`);
+    }
+    return el;
+  }
+
+  water = new Water();
+  renderer = new Renderer();
+  cubemap = new Cubemap({
+    xneg: getEl("xneg"),
+    xpos: getEl("xpos"),
+    yneg: getEl("ypos"), // Using ypos for yneg as per original
+    ypos: getEl("ypos"),
+    zneg: getEl("zneg"),
+    zpos: getEl("zpos"),
+  });
+
+  center = new THREE.Vector3(-0.4, -0.75, 0.2);
+  oldCenter = new THREE.Vector3(-0.4, -0.75, 0.2);
+  velocity = new THREE.Vector3();
+  gravity = new THREE.Vector3(0, -4, 0);
   radius = 0.25;
 
   for (let i = 0; i < 20; i++) {
     water.addDrop(
+      sceneRenderer,
       Math.random() * 2 - 1,
       Math.random() * 2 - 1,
       0.03,
@@ -96,12 +216,7 @@ window.onload = function () {
   }
   onresize();
 
-  const requestAnimationFrame =
-    window.requestAnimationFrame ||
-    (window as any).webkitRequestAnimationFrame ||
-    function (callback: FrameRequestCallback) {
-      setTimeout(callback, 0);
-    };
+  updatePoolDimensions();
 
   let prevTime = new Date().getTime();
   function animate(): void {
@@ -117,8 +232,8 @@ window.onload = function () {
 
   window.onresize = onresize;
 
-  let prevHit: GLVector;
-  let planeNormal: GLVector;
+  let prevHit: THREE.Vector3;
+  let planeNormal: THREE.Vector3;
   let mode = -1;
   const MODE_ADD_DROPS = 0;
   const MODE_MOVE_SPHERE = 1;
@@ -126,59 +241,117 @@ window.onload = function () {
 
   let oldX: number, oldY: number;
 
+  function getRay(x: number, y: number): THREE.Ray {
+    // Normalised Device Coordinates (NDC)
+    // x, y are pageX, pageY.
+    // canvas might have offset? "width = innerWidth - 20".
+    // But event.pageX is relative to document.
+    // Let's assume canvas is at top left but maybe not?
+    // document.body.appendChild(canvas).
+
+    const rect = sceneRenderer.domElement.getBoundingClientRect();
+    const ndcX = ((x - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((y - rect.top) / rect.height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    return raycaster.ray;
+  }
+
   function startDrag(x: number, y: number): void {
     oldX = x;
     oldY = y;
-    const tracer = new GL.Raytracer();
-    const ray = tracer.getRayForPixel(x * ratio, y * ratio);
-    const pointOnPlane = tracer.eye.add(ray.multiply(-tracer.eye.y / ray.y));
-    const sphereHitTest = GL.Raytracer.hitTestSphere(
-      tracer.eye,
-      ray,
-      center,
-      radius
-    );
-    if (sphereHitTest) {
+
+    const ray = getRay(x, y);
+
+    // hitTestSphere
+    const sphere = new THREE.Sphere(center, radius);
+    const sphereHit = ray.intersectSphere(sphere, new THREE.Vector3());
+
+    if (sphereHit) {
       mode = MODE_MOVE_SPHERE;
-      prevHit = sphereHitTest.hit;
-      planeNormal = tracer
-        .getRayForPixel(gl.canvas.width / 2, gl.canvas.height / 2)
-        .negative();
-    } else if (Math.abs(pointOnPlane.x) < 1 && Math.abs(pointOnPlane.z) < 1) {
-      mode = MODE_ADD_DROPS;
-      duringDrag(x, y);
+      prevHit = sphereHit;
+      planeNormal = camera.position
+        .clone()
+        .sub(new THREE.Vector3(0, 0, 0))
+        .normalize()
+        .negate(); // View vector?
+      // Original: tracer.getRayForPixel(width/2, height/2).negative() -> Vector pointing FROM center TO eye (if ray is eye->pixel).
+      // Wait, ray is Eye -> Pixel. Negative is Pixel -> Eye.
+      // Actually original was: planeNormal = ray_center.negative();
+      // Ray from eye to center of screen. Negative is Z axis of camera in world space (roughly).
+      // Let's just use camera forward vector negated? Or just camera direction.
+      const viewDir = new THREE.Vector3();
+      camera.getWorldDirection(viewDir);
+      planeNormal = viewDir.negate();
     } else {
-      mode = MODE_ORBIT_CAMERA;
+      // Plane interaction
+      // pointOnPlane = tracer.eye.add(ray.multiply(-tracer.eye.y / ray.y));
+      // This intersects with Plane y=0.
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const pointOnPlane = new THREE.Vector3();
+      const hit = ray.intersectPlane(plane, pointOnPlane);
+
+      if (
+        hit &&
+        Math.abs(pointOnPlane.x) < poolWidth / 2 &&
+        Math.abs(pointOnPlane.z) < poolLength / 2
+      ) {
+        mode = MODE_ADD_DROPS;
+        duringDrag(x, y);
+      } else {
+        mode = MODE_ORBIT_CAMERA;
+      }
     }
   }
 
   function duringDrag(x: number, y: number): void {
     switch (mode) {
       case MODE_ADD_DROPS: {
-        const tracer = new GL.Raytracer();
-        const ray = tracer.getRayForPixel(x * ratio, y * ratio);
-        const pointOnPlane = tracer.eye.add(
-          ray.multiply(-tracer.eye.y / ray.y)
-        );
-        water.addDrop(pointOnPlane.x, pointOnPlane.z, 0.03, 0.01);
-        if (paused) {
-          water.updateNormals();
-          renderer.updateCaustics(water);
+        const ray = getRay(x, y);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const pointOnPlane = new THREE.Vector3();
+        const hit = ray.intersectPlane(plane, pointOnPlane);
+
+        if (hit) {
+          water.addDrop(
+            sceneRenderer,
+            pointOnPlane.x,
+            pointOnPlane.z,
+            0.03,
+            0.01
+          );
+          if (paused) {
+            water.updateNormals(sceneRenderer);
+            renderer.updateCaustics(sceneRenderer, water);
+          }
         }
         break;
       }
       case MODE_MOVE_SPHERE: {
-        const tracer = new GL.Raytracer();
-        const ray = tracer.getRayForPixel(x * ratio, y * ratio);
-        const t =
-          -planeNormal.dot(tracer.eye.subtract(prevHit)) / planeNormal.dot(ray);
-        const nextHit = tracer.eye.add(ray.multiply(t));
-        center = center.add(nextHit.subtract(prevHit));
-        center.x = Math.max(radius - 1, Math.min(1 - radius, center.x));
-        center.y = Math.max(radius - 1, Math.min(10, center.y));
-        center.z = Math.max(radius - 1, Math.min(1 - radius, center.z));
-        prevHit = nextHit;
-        if (paused) renderer.updateCaustics(water);
+        const ray = getRay(x, y);
+        // t = -planeNormal.dot(tracer.eye.subtract(prevHit)) / planeNormal.dot(ray);
+        // This is intersection with a plane passing through prevHit with normal planeNormal.
+        const dragPlane = new THREE.Plane();
+        dragPlane.setFromNormalAndCoplanarPoint(planeNormal, prevHit);
+
+        const nextHit = new THREE.Vector3();
+        const hit = ray.intersectPlane(dragPlane, nextHit);
+
+        if (hit) {
+          center.add(nextHit.clone().sub(prevHit));
+          center.x = Math.max(
+            radius - poolWidth / 2,
+            Math.min(poolWidth / 2 - radius, center.x)
+          );
+          center.y = Math.max(radius - poolDepth, Math.min(10, center.y));
+          center.z = Math.max(
+            radius - poolLength / 2,
+            Math.min(poolLength / 2 - radius, center.z)
+          );
+          prevHit = nextHit;
+          if (paused) renderer.updateCaustics(sceneRenderer, water);
+        }
         break;
       }
       case MODE_ORBIT_CAMERA: {
@@ -198,7 +371,7 @@ window.onload = function () {
   }
 
   document.onmousedown = function (e: MouseEvent): void {
-    e.preventDefault();
+    // e.preventDefault(); // Might block interaction?
     startDrag(e.pageX, e.pageY);
   };
 
@@ -230,9 +403,10 @@ window.onload = function () {
   };
 
   document.onkeydown = function (e: KeyboardEvent): void {
-    if (e.which == " ".charCodeAt(0)) paused = !paused;
-    else if (e.which == "G".charCodeAt(0)) useSpherePhysics = !useSpherePhysics;
-    else if (e.which == "L".charCodeAt(0) && paused) draw();
+    if (e.key === " ") paused = !paused;
+    else if (e.key === "g" || e.key === "G")
+      useSpherePhysics = !useSpherePhysics;
+    else if ((e.key === "l" || e.key === "L") && paused) draw();
   };
 
   let frame = 0;
@@ -242,69 +416,108 @@ window.onload = function () {
     frame += seconds * 2;
 
     if (mode == MODE_MOVE_SPHERE) {
-      // Start from rest when the player releases the mouse after moving the sphere
-      velocity = new GL.Vector();
+      velocity.set(0, 0, 0);
     } else if (useSpherePhysics) {
-      // Fall down with viscosity under water
       const percentUnderWater = Math.max(
         0,
         Math.min(1, (radius - center.y) / (2 * radius))
       );
-      velocity = velocity.add(
-        gravity.multiply(seconds - 1.1 * seconds * percentUnderWater)
-      );
-      velocity = velocity.subtract(
-        velocity
-          .unit()
-          .multiply(percentUnderWater * seconds * velocity.dot(velocity))
-      );
-      center = center.add(velocity.multiply(seconds));
 
-      // Bounce off the bottom
-      if (center.y < radius - 1) {
-        center.y = radius - 1;
+      // velocity = velocity.add(gravity.multiply(seconds - 1.1 * seconds * percentUnderWater));
+
+      // Calculate buoyancy factor based on target float ratio
+      // At equilibrium: Buoyancy = Gravity
+      // Buoyancy = k * Gravity * percentSubmerged
+      // k * (1 - sphereFloatRatio) = 1
+      // k = 1 / (1 - sphereFloatRatio)
+
+      const buoyancyFactor = 1.0 / (1.0 - sphereFloatRatio);
+
+      const gTerm = gravity
+        .clone()
+        .multiplyScalar(seconds - buoyancyFactor * seconds * percentUnderWater);
+      velocity.add(gTerm);
+
+      // velocity = velocity.subtract(velocity.unit().multiply(percentUnderWater * seconds * velocity.dot(velocity)));
+      // Note: velocity.unit() -> normalize()
+      if (velocity.lengthSq() > 0) {
+        const drag = velocity
+          .clone()
+          .normalize()
+          .multiplyScalar(percentUnderWater * seconds * velocity.dot(velocity));
+        velocity.sub(drag);
+      }
+
+      center.add(velocity.clone().multiplyScalar(seconds));
+
+      if (center.y < radius - poolDepth) {
+        center.y = radius - poolDepth;
         velocity.y = Math.abs(velocity.y) * 0.7;
       }
     }
 
     // Displace water around the sphere
-    water.moveSphere(
-      [oldCenter.x, oldCenter.y, oldCenter.z],
-      [center.x, center.y, center.z],
-      radius
-    );
-    oldCenter = center;
+    // We must pass Cloned vectors because 'center' is updated in place,
+    // and oldCenter might be a reference to the same object or mutated unexpectedly if we aren't careful.
+    // However, in this code:
+    // oldCenter = center (line 91), then in loop:
+    //   moveSphere(oldCenter, center) -> calculates diff
+    //   oldCenter.copy(center) -> updates oldCenter to match new center for NEXT frame.
+    // BUT: In JS, if we pass references to uniforms, we must be careful.
+    // The issue is likely that water.moveSphere uses the material uniforms.
+
+    water.moveSphere(sceneRenderer, oldCenter, center, radius);
+    oldCenter.copy(center);
 
     // Update the water simulation and graphics
-    water.stepSimulation();
-    water.stepSimulation();
-    water.updateNormals();
-    renderer.updateCaustics(water);
+    water.stepSimulation(sceneRenderer);
+    water.stepSimulation(sceneRenderer);
+    water.updateNormals(sceneRenderer);
+    renderer.updateCaustics(sceneRenderer, water);
   }
 
   function draw(): void {
-    // Change the light direction to the camera look vector when the L key is pressed
-    if (GL.keys.L) {
-      renderer.lightDir = GL.Vector.fromAngles(
-        ((90 - angleY) * Math.PI) / 180,
-        (-angleX * Math.PI) / 180
-      );
-      if (paused) renderer.updateCaustics(water);
+    if (paused) {
+      // If L key logic needed
     }
 
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.loadIdentity();
-    gl.translate(0, 0, -4);
-    gl.rotate(-angleX, 1, 0, 0);
-    gl.rotate(-angleY, 0, 1, 0);
-    gl.translate(0, 0.5, 0);
+    // Update Camera position based on Orbit angles
+    // gl.translate(0, 0, -4);
+    // gl.rotate(-angleX, 1, 0, 0);
+    // gl.rotate(-angleY, 0, 1, 0);
+    // gl.translate(0, 0.5, 0);
 
-    gl.enable(gl.DEPTH_TEST);
+    // In lightgl (OpenGL), camera transform is inverse of modelview.
+    // Here we orbit camera around 0,0,0
+    // Original:
+    // translate(0,0,-4) -> move world away by 4 (or camera back by 4)
+    // rotate -> rotate world
+    // translate(0, 0.5, 0) -> move world up 0.5 (or camera down)
+
+    // Let's implement orbit manually for camera
+    const dist = 4;
+    // Angles are in degrees
+    const radX = (angleX * Math.PI) / 180;
+    const radY = (angleY * Math.PI) / 180;
+
+    // Calculate camera position
+    // Rotation Order: Y then X?
+
+    // Let's stick to a simple orbit for now.
+    camera.position.x = Math.sin(radY) * dist * Math.cos(radX);
+    camera.position.y = Math.sin(radX) * dist; // + some offset?
+    camera.position.z = Math.cos(radY) * dist * Math.cos(radX);
+
+    // Adjust for the translations
+    // The code had `gl.translate(0, 0.5, 0)` before drawing geometry.
+    // This moves geometry UP by 0.5.
+    // So the pivot point is effectively (0, 0, 0) of the geometry, which is displayed at y=0.5 relative to rotation center.
+    // Effectively we look at point (0, 0.5, 0)?
+
+    camera.lookAt(new THREE.Vector3(0, 0.5, 0)); // Guessing offset
+
     renderer.sphereCenter = center;
     renderer.sphereRadius = radius;
-    renderer.renderCube(water);
-    renderer.renderWater(water, cubemap);
-    renderer.renderSphere(water);
-    gl.disable(gl.DEPTH_TEST);
+    renderer.render(sceneRenderer, camera, water, cubemap);
   }
 };

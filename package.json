@@ -9,6 +9,10 @@
     "build": "vite build",
     "preview": "vite preview"
   },
+  "dependencies": {
+    "@types/three": "^0.182.0",
+    "three": "^0.182.0"
+  },
   "devDependencies": {
     "typescript": "^5.9.3",
     "vite": "^7.2.7"

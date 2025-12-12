@@ -1,4 +1,4 @@
-import { gl } from "./main";
+import * as THREE from "three";
 
 interface CubemapImages {
   xneg: HTMLImageElement;
@@ -10,77 +10,27 @@ interface CubemapImages {
 }
 
 export class Cubemap {
-  id: WebGLTexture;
+  texture: THREE.CubeTexture;
 
   constructor(images: CubemapImages) {
-    this.id = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.id);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const imgs = [
+      images.xpos,
+      images.xneg,
+      images.ypos,
+      images.yneg,
+      images.zpos,
+      images.zneg,
+    ];
 
-    // WebGL 2.0 uses sized internal formats
-    const internalFormat = gl.RGB8;
+    // Check if any image is missing
+    if (imgs.some((img) => !img)) {
+      console.error("Cubemap: Some images are missing", images);
+      throw new Error("Cubemap: Some images are missing");
+    }
 
-    gl.texImage2D(
-      gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
-      0,
-      internalFormat,
-      gl.RGB,
-      gl.UNSIGNED_BYTE,
-      images.xneg
-    );
-    gl.texImage2D(
-      gl.TEXTURE_CUBE_MAP_POSITIVE_X,
-      0,
-      internalFormat,
-      gl.RGB,
-      gl.UNSIGNED_BYTE,
-      images.xpos
-    );
-    gl.texImage2D(
-      gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
-      0,
-      internalFormat,
-      gl.RGB,
-      gl.UNSIGNED_BYTE,
-      images.yneg
-    );
-    gl.texImage2D(
-      gl.TEXTURE_CUBE_MAP_POSITIVE_Y,
-      0,
-      internalFormat,
-      gl.RGB,
-      gl.UNSIGNED_BYTE,
-      images.ypos
-    );
-    gl.texImage2D(
-      gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
-      0,
-      internalFormat,
-      gl.RGB,
-      gl.UNSIGNED_BYTE,
-      images.zneg
-    );
-    gl.texImage2D(
-      gl.TEXTURE_CUBE_MAP_POSITIVE_Z,
-      0,
-      internalFormat,
-      gl.RGB,
-      gl.UNSIGNED_BYTE,
-      images.zpos
-    );
-  }
-
-  bind(unit?: number): void {
-    gl.activeTexture(gl.TEXTURE0 + (unit || 0));
-    gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.id);
-  }
-
-  unbind(unit?: number): void {
-    gl.activeTexture(gl.TEXTURE0 + (unit || 0));
-    gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+    this.texture = new THREE.CubeTexture(imgs);
+    this.texture.format = THREE.RGBAFormat; // Typically images are RGBA
+    this.texture.type = THREE.UnsignedByteType;
+    this.texture.needsUpdate = true;
   }
 }
