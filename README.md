@@ -1,3 +1,12 @@
 # WebGL Water Demo
 
-http://madebyevan.com/webgl-water/
+一个使用 WebGL 2.0 实现的池核效果演示。
+
+原项目：http://madebyevan.com/webgl-water/
+
+## 功能说明
+
+- **鼠标拖拽**：在水面上添加波纹，移动球体，或旋转相机
+- **空格键**：暂停/继续动画
+- **G 键**：启用/禁用球体物理
+- **L 键**：将光源方向设置为相机方向（仅在暂停时生效）

@@ -1,12 +1,14 @@
-/*
- * WebGL Water
- * http://madebyevan.com/webgl-water/
- *
- * Copyright 2011 Evan Wallace
- * Released under the MIT license
- */
+import {
+  GL,
+  type GLTexture,
+  type GLVector,
+  type GLMesh,
+  type GLShader,
+} from "./lib/lightgl";
+import { gl } from "./main";
+import type { Water } from "./water";
 
-var helperFunctions =
+const helperFunctions =
   "\
   const float IOR_AIR = 1.0;\
   const float IOR_WATER = 1.333;\
@@ -103,19 +105,36 @@ var helperFunctions =
   }\
 ";
 
-function Renderer() {
-  this.tileTexture = GL.Texture.fromImage(document.getElementById("tiles"), {
-    minFilter: gl.LINEAR_MIPMAP_LINEAR,
-    wrap: gl.REPEAT,
-    format: gl.RGB,
-  });
-  this.lightDir = new GL.Vector(2.0, 2.0, -1.0).unit();
-  this.causticTex = new GL.Texture(1024, 1024);
-  this.waterMesh = GL.Mesh.plane({ detail: 200 });
-  this.waterShaders = [];
-  for (var i = 0; i < 2; i++) {
-    this.waterShaders[i] = new GL.Shader(
-      "\
+export class Renderer {
+  tileTexture: GLTexture;
+  lightDir: GLVector;
+  causticTex: GLTexture;
+  waterMesh: GLMesh;
+  waterShaders: GLShader[];
+  sphereMesh: GLMesh;
+  sphereShader: GLShader;
+  cubeMesh: GLMesh;
+  cubeShader: GLShader;
+  sphereRadius: number;
+  sphereCenter: GLVector;
+  causticsShader: GLShader;
+
+  constructor() {
+    this.tileTexture = GL.Texture.fromImage(
+      document.getElementById("tiles") as HTMLImageElement,
+      {
+        minFilter: gl.LINEAR_MIPMAP_LINEAR,
+        wrap: gl.REPEAT,
+        format: gl.RGB,
+      }
+    );
+    this.lightDir = new GL.Vector(2.0, 2.0, -1.0).unit();
+    this.causticTex = new GL.Texture(1024, 1024);
+    this.waterMesh = GL.Mesh.plane({ detail: 200 });
+    this.waterShaders = [];
+    for (let i = 0; i < 2; i++) {
+      this.waterShaders[i] = new GL.Shader(
+        "\
       uniform sampler2D water;\
       varying vec3 position;\
       void main() {\
@@ -125,8 +144,8 @@ function Renderer() {
         gl_Position = gl_ModelViewProjectionMatrix * vec4(position, 1.0);\
       }\
     ",
-      helperFunctions +
-        '\
+        helperFunctions +
+          '\
       uniform vec3 eye;\
       varying vec3 position;\
       uniform samplerCube sky;\
@@ -167,8 +186,8 @@ function Renderer() {
         vec3 incomingRay = normalize(position - eye);\
         \
         ' +
-        (i
-          ? /* underwater */ "\
+          (i
+            ? /* underwater */ "\
           normal = -normal;\
           vec3 reflectedRay = reflect(incomingRay, normal);\
           vec3 refractedRay = refract(incomingRay, normal, IOR_WATER / IOR_AIR);\
@@ -179,7 +198,7 @@ function Renderer() {
           \
           gl_FragColor = vec4(mix(reflectedColor, refractedColor, (1.0 - fresnel) * length(refractedRay)), 1.0);\
         "
-          : /* above water */ "\
+            : /* above water */ "\
           vec3 reflectedRay = reflect(incomingRay, normal);\
           vec3 refractedRay = refract(incomingRay, normal, IOR_AIR / IOR_WATER);\
           float fresnel = mix(0.25, 1.0, pow(1.0 - dot(normal, -incomingRay), 3.0));\
@@ -189,23 +208,23 @@ function Renderer() {
           \
           gl_FragColor = vec4(mix(refractedColor, reflectedColor, fresnel), 1.0);\
         ") +
-        "\
+          "\
       }\
     "
-    );
-  }
-  this.sphereMesh = GL.Mesh.sphere({ detail: 10 });
-  this.sphereShader = new GL.Shader(
-    helperFunctions +
-      "\
+      );
+    }
+    this.sphereMesh = GL.Mesh.sphere({ detail: 10 });
+    this.sphereShader = new GL.Shader(
+      helperFunctions +
+        "\
     varying vec3 position;\
     void main() {\
       position = sphereCenter + gl_Vertex.xyz * sphereRadius;\
       gl_Position = gl_ModelViewProjectionMatrix * vec4(position, 1.0);\
     }\
   ",
-    helperFunctions +
-      "\
+      helperFunctions +
+        "\
     varying vec3 position;\
     void main() {\
       gl_FragColor = vec4(getSphereColor(position), 1.0);\
@@ -215,13 +234,15 @@ function Renderer() {
       }\
     }\
   "
-  );
-  this.cubeMesh = GL.Mesh.cube();
-  this.cubeMesh.triangles.splice(4, 2);
-  this.cubeMesh.compile();
-  this.cubeShader = new GL.Shader(
-    helperFunctions +
-      "\
+    );
+    this.cubeMesh = GL.Mesh.cube();
+    (this.cubeMesh.triangles as unknown[]).splice(4, 2);
+    if (this.cubeMesh.compile) {
+      this.cubeMesh.compile();
+    }
+    this.cubeShader = new GL.Shader(
+      helperFunctions +
+        "\
     varying vec3 position;\
     void main() {\
       position = gl_Vertex.xyz;\
@@ -229,8 +250,8 @@ function Renderer() {
       gl_Position = gl_ModelViewProjectionMatrix * vec4(position, 1.0);\
     }\
   ",
-    helperFunctions +
-      "\
+      helperFunctions +
+        "\
     varying vec3 position;\
     void main() {\
       gl_FragColor = vec4(getWallColor(position), 1.0);\
@@ -240,12 +261,12 @@ function Renderer() {
       }\
     }\
   "
-  );
-  this.sphereRadius = 0;
-  this.sphereCenter = new GL.Vector();
-  this.causticsShader = new GL.Shader(
-    helperFunctions +
-      "\
+    );
+    this.sphereRadius = 0;
+    this.sphereCenter = new GL.Vector();
+    this.causticsShader = new GL.Shader(
+      helperFunctions +
+        "\
     varying vec3 oldPos;\
     varying vec3 newPos;\
     varying vec3 ray;\
@@ -272,21 +293,21 @@ function Renderer() {
       gl_Position = vec4(0.75 * (newPos.xz + refractedLight.xz / refractedLight.y), 0.0, 1.0);\
     }\
   ",
-    helperFunctions +
-      "\
+      helperFunctions +
+        "\
     varying vec3 oldPos;\
     varying vec3 newPos;\
     varying vec3 ray;\
     \
     void main() {\
       " +
-      "\
+        "\
         /* if the triangle gets smaller, it gets brighter, and vice versa */\
         float oldArea = length(dFdx(oldPos)) * length(dFdy(oldPos));\
         float newArea = length(dFdx(newPos)) * length(dFdy(newPos));\
         gl_FragColor = vec4(oldArea / newArea * 0.2, 1.0, 0.0, 0.0);\
       " +
-      "\
+        "\
       \
       vec3 refractedLight = refract(-light, vec3(0.0, 1.0, 0.0), IOR_AIR / IOR_WATER);\
       \
@@ -305,75 +326,83 @@ function Renderer() {
       gl_FragColor.r *= 1.0 / (1.0 + exp(-200.0 / (1.0 + 10.0 * (t.y - t.x)) * (newPos.y - refractedLight.y * t.y - 2.0 / 12.0)));\
     }\
   "
-  );
-}
-
-Renderer.prototype.updateCaustics = function(water) {
-  if (!this.causticsShader) return;
-  var this_ = this;
-  this.causticTex.drawTo(function() {
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    // Enable additive blending for caustics accumulation
-    gl.enable(gl.BLEND);
-
-    water.textureA.bind(0);
-    this_.causticsShader.uniforms({
-      light: this_.lightDir,
-      water: 0,
-      sphereCenter: this_.sphereCenter,
-      sphereRadius: this_.sphereRadius
-    }).draw(this_.waterMesh);
-  });
-};
-
-Renderer.prototype.renderWater = function(water, sky) {
-  var tracer = new GL.Raytracer();
-  water.textureA.bind(0);
-  this.tileTexture.bind(1);
-  sky.bind(2);
-  this.causticTex.bind(3);
-  gl.enable(gl.CULL_FACE);
-  for (var i = 0; i < 2; i++) {
-    gl.cullFace(i ? gl.BACK : gl.FRONT);
-    this.waterShaders[i].uniforms({
-      light: this.lightDir,
-      water: 0,
-      tiles: 1,
-      sky: 2,
-      causticTex: 3,
-      eye: tracer.eye,
-      sphereCenter: this.sphereCenter,
-      sphereRadius: this.sphereRadius
-    }).draw(this.waterMesh);
+    );
   }
-  gl.disable(gl.CULL_FACE);
-};
 
-Renderer.prototype.renderSphere = function() {
-  water.textureA.bind(0);
-  this.causticTex.bind(1);
-  this.sphereShader.uniforms({
-    light: this.lightDir,
-    water: 0,
-    causticTex: 1,
-    sphereCenter: this.sphereCenter,
-    sphereRadius: this.sphereRadius
-  }).draw(this.sphereMesh);
-};
+  updateCaustics(water: Water): void {
+    if (!this.causticsShader) return;
+    this.causticTex.drawTo(() => {
+      gl.clear(gl.COLOR_BUFFER_BIT);
 
-Renderer.prototype.renderCube = function() {
-  gl.enable(gl.CULL_FACE);
-  water.textureA.bind(0);
-  this.tileTexture.bind(1);
-  this.causticTex.bind(2);
-  this.cubeShader.uniforms({
-    light: this.lightDir,
-    water: 0,
-    tiles: 1,
-    causticTex: 2,
-    sphereCenter: this.sphereCenter,
-    sphereRadius: this.sphereRadius
-  }).draw(this.cubeMesh);
-  gl.disable(gl.CULL_FACE);
-};
+      // Enable additive blending for caustics accumulation
+      gl.enable(gl.BLEND);
+
+      water.textureA.bind(0);
+      this.causticsShader
+        .uniforms({
+          light: this.lightDir,
+          water: 0,
+          sphereCenter: this.sphereCenter,
+          sphereRadius: this.sphereRadius,
+        })
+        .draw(this.waterMesh);
+    });
+  }
+
+  renderWater(water: Water, sky: { bind(unit: number): void }): void {
+    const tracer = new GL.Raytracer();
+    water.textureA.bind(0);
+    this.tileTexture.bind(1);
+    sky.bind(2);
+    this.causticTex.bind(3);
+    gl.enable(gl.CULL_FACE);
+    for (let i = 0; i < 2; i++) {
+      gl.cullFace(i ? gl.BACK : gl.FRONT);
+      this.waterShaders[i]
+        .uniforms({
+          light: this.lightDir,
+          water: 0,
+          tiles: 1,
+          sky: 2,
+          causticTex: 3,
+          eye: tracer.eye,
+          sphereCenter: this.sphereCenter,
+          sphereRadius: this.sphereRadius,
+        })
+        .draw(this.waterMesh);
+    }
+    gl.disable(gl.CULL_FACE);
+  }
+
+  renderSphere(water: Water): void {
+    water.textureA.bind(0);
+    this.causticTex.bind(1);
+    this.sphereShader
+      .uniforms({
+        light: this.lightDir,
+        water: 0,
+        causticTex: 1,
+        sphereCenter: this.sphereCenter,
+        sphereRadius: this.sphereRadius,
+      })
+      .draw(this.sphereMesh);
+  }
+
+  renderCube(water: Water): void {
+    gl.enable(gl.CULL_FACE);
+    water.textureA.bind(0);
+    this.tileTexture.bind(1);
+    this.causticTex.bind(2);
+    this.cubeShader
+      .uniforms({
+        light: this.lightDir,
+        water: 0,
+        tiles: 1,
+        causticTex: 2,
+        sphereCenter: this.sphereCenter,
+        sphereRadius: this.sphereRadius,
+      })
+      .draw(this.cubeMesh);
+    gl.disable(gl.CULL_FACE);
+  }
+}

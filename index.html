@@ -12,11 +12,6 @@ Released under the MIT license
 <head>
   <title>WebGL 2.0 Water</title>
   <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
-  <script src="lightgl.js"></script>
-  <script src="cubemap.js"></script>
-  <script src="renderer.js"></script>
-  <script src="water.js"></script>
-  <script src="main.js"></script>
   <style type="text/css">
     body {
       font: 13px/140% Arial, sans-serif;
@@ -73,14 +68,16 @@ Released under the MIT license
 
 <body>
   <div id="loading">Loading...</div>
-    
+
   </div>
-  <img id="tiles" src="tiles.jpg">
-  <img id="xneg" src="xneg.jpg">
-  <img id="xpos" src="xpos.jpg">
-  <img id="ypos" src="ypos.jpg">
-  <img id="zneg" src="zneg.jpg">
-  <img id="zpos" src="zpos.jpg">
+  <img id="tiles" src="/tiles.jpg">
+  <img id="xneg" src="/xneg.jpg">
+  <img id="xpos" src="/xpos.jpg">
+  <img id="ypos" src="/ypos.jpg">
+  <img id="zneg" src="/zneg.jpg">
+  <img id="zpos" src="/zpos.jpg">
+
+  <script type="module" src="/src/main.ts"></script>
 </body>
 
 </html>
