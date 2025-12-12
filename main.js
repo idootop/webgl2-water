@@ -42,10 +42,9 @@ var paused = false;
 
 window.onload = function() {
   var ratio = window.devicePixelRatio || 1;
-  var help = document.getElementById('help');
 
   function onresize() {
-    var width = innerWidth - help.clientWidth - 20;
+    var width = innerWidth - 20;
     var height = innerHeight;
     gl.canvas.width = width * ratio;
     gl.canvas.height = height * ratio;
@@ -178,15 +177,9 @@ window.onload = function() {
     mode = -1;
   }
 
-  function isHelpElement(element) {
-    return element === help || element.parentNode && isHelpElement(element.parentNode);
-  }
-
   document.onmousedown = function(e) {
-    if (!isHelpElement(e.target)) {
-      e.preventDefault();
-      startDrag(e.pageX, e.pageY);
-    }
+    e.preventDefault();
+    startDrag(e.pageX, e.pageY);
   };
 
   document.onmousemove = function(e) {
@@ -198,7 +191,7 @@ window.onload = function() {
   };
 
   document.ontouchstart = function(e) {
-    if (e.touches.length === 1 && !isHelpElement(e.target)) {
+    if (e.touches.length === 1) {
       e.preventDefault();
       startDrag(e.touches[0].pageX, e.touches[0].pageY);
     }

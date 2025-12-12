@@ -6,7 +6,8 @@
  * Released under the MIT license
  */
 
-var helperFunctions = '\
+var helperFunctions =
+  "\
   const float IOR_AIR = 1.0;\
   const float IOR_WATER = 1.333;\
   const vec3 abovewaterColor = vec3(0.25, 1.0, 1.25);\
@@ -100,20 +101,21 @@ var helperFunctions = '\
     \
     return wallColor * scale;\
   }\
-';
+";
 
 function Renderer() {
-  this.tileTexture = GL.Texture.fromImage(document.getElementById('tiles'), {
+  this.tileTexture = GL.Texture.fromImage(document.getElementById("tiles"), {
     minFilter: gl.LINEAR_MIPMAP_LINEAR,
     wrap: gl.REPEAT,
-    format: gl.RGB
+    format: gl.RGB,
   });
   this.lightDir = new GL.Vector(2.0, 2.0, -1.0).unit();
   this.causticTex = new GL.Texture(1024, 1024);
   this.waterMesh = GL.Mesh.plane({ detail: 200 });
   this.waterShaders = [];
   for (var i = 0; i < 2; i++) {
-    this.waterShaders[i] = new GL.Shader('\
+    this.waterShaders[i] = new GL.Shader(
+      "\
       uniform sampler2D water;\
       varying vec3 position;\
       void main() {\
@@ -122,7 +124,9 @@ function Renderer() {
         position.y += info.r;\
         gl_Position = gl_ModelViewProjectionMatrix * vec4(position, 1.0);\
       }\
-    ', helperFunctions + '\
+    ",
+      helperFunctions +
+        '\
       uniform vec3 eye;\
       varying vec3 position;\
       uniform samplerCube sky;\
@@ -162,7 +166,9 @@ function Renderer() {
         vec3 normal = vec3(info.b, sqrt(1.0 - dot(info.ba, info.ba)), info.a);\
         vec3 incomingRay = normalize(position - eye);\
         \
-        ' + (i ? /* underwater */ '\
+        ' +
+        (i
+          ? /* underwater */ "\
           normal = -normal;\
           vec3 reflectedRay = reflect(incomingRay, normal);\
           vec3 refractedRay = refract(incomingRay, normal, IOR_WATER / IOR_AIR);\
@@ -172,7 +178,8 @@ function Renderer() {
           vec3 refractedColor = getSurfaceRayColor(position, refractedRay, vec3(1.0)) * vec3(0.8, 1.0, 1.1);\
           \
           gl_FragColor = vec4(mix(reflectedColor, refractedColor, (1.0 - fresnel) * length(refractedRay)), 1.0);\
-        ' : /* above water */ '\
+        "
+          : /* above water */ "\
           vec3 reflectedRay = reflect(incomingRay, normal);\
           vec3 refractedRay = refract(incomingRay, normal, IOR_AIR / IOR_WATER);\
           float fresnel = mix(0.25, 1.0, pow(1.0 - dot(normal, -incomingRay), 3.0));\
@@ -181,18 +188,24 @@ function Renderer() {
           vec3 refractedColor = getSurfaceRayColor(position, refractedRay, abovewaterColor);\
           \
           gl_FragColor = vec4(mix(refractedColor, reflectedColor, fresnel), 1.0);\
-        ') + '\
+        ") +
+        "\
       }\
-    ');
+    "
+    );
   }
   this.sphereMesh = GL.Mesh.sphere({ detail: 10 });
-  this.sphereShader = new GL.Shader(helperFunctions + '\
+  this.sphereShader = new GL.Shader(
+    helperFunctions +
+      "\
     varying vec3 position;\
     void main() {\
       position = sphereCenter + gl_Vertex.xyz * sphereRadius;\
       gl_Position = gl_ModelViewProjectionMatrix * vec4(position, 1.0);\
     }\
-  ', helperFunctions + '\
+  ",
+    helperFunctions +
+      "\
     varying vec3 position;\
     void main() {\
       gl_FragColor = vec4(getSphereColor(position), 1.0);\
@@ -201,18 +214,23 @@ function Renderer() {
         gl_FragColor.rgb *= underwaterColor * 1.2;\
       }\
     }\
-  ');
+  "
+  );
   this.cubeMesh = GL.Mesh.cube();
   this.cubeMesh.triangles.splice(4, 2);
   this.cubeMesh.compile();
-  this.cubeShader = new GL.Shader(helperFunctions + '\
+  this.cubeShader = new GL.Shader(
+    helperFunctions +
+      "\
     varying vec3 position;\
     void main() {\
       position = gl_Vertex.xyz;\
       position.y = ((1.0 - position.y) * (7.0 / 12.0) - 1.0) * poolHeight;\
       gl_Position = gl_ModelViewProjectionMatrix * vec4(position, 1.0);\
     }\
-  ', helperFunctions + '\
+  ",
+    helperFunctions +
+      "\
     varying vec3 position;\
     void main() {\
       gl_FragColor = vec4(getWallColor(position), 1.0);\
@@ -221,11 +239,13 @@ function Renderer() {
         gl_FragColor.rgb *= underwaterColor * 1.2;\
       }\
     }\
-  ');
-  this.sphereCenter = new GL.Vector();
+  "
+  );
   this.sphereRadius = 0;
-  var hasDerivatives = !!gl.getExtension('OES_standard_derivatives');
-  this.causticsShader = new GL.Shader(helperFunctions + '\
+  this.sphereCenter = new GL.Vector();
+  this.causticsShader = new GL.Shader(
+    helperFunctions +
+      "\
     varying vec3 oldPos;\
     varying vec3 newPos;\
     varying vec3 ray;\
@@ -251,21 +271,22 @@ function Renderer() {
       \
       gl_Position = vec4(0.75 * (newPos.xz + refractedLight.xz / refractedLight.y), 0.0, 1.0);\
     }\
-  ', (hasDerivatives ? '#extension GL_OES_standard_derivatives : enable\n' : '') + '\
-    ' + helperFunctions + '\
+  ",
+    helperFunctions +
+      "\
     varying vec3 oldPos;\
     varying vec3 newPos;\
     varying vec3 ray;\
     \
     void main() {\
-      ' + (hasDerivatives ? '\
+      " +
+      "\
         /* if the triangle gets smaller, it gets brighter, and vice versa */\
         float oldArea = length(dFdx(oldPos)) * length(dFdy(oldPos));\
         float newArea = length(dFdx(newPos)) * length(dFdy(newPos));\
         gl_FragColor = vec4(oldArea / newArea * 0.2, 1.0, 0.0, 0.0);\
-      ' : '\
-        gl_FragColor = vec4(0.2, 0.2, 0.0, 0.0);\
-      ' ) + '\
+      " +
+      "\
       \
       vec3 refractedLight = refract(-light, vec3(0.0, 1.0, 0.0), IOR_AIR / IOR_WATER);\
       \
@@ -283,7 +304,8 @@ function Renderer() {
       vec2 t = intersectCube(newPos, -refractedLight, vec3(-1.0, -poolHeight, -1.0), vec3(1.0, 2.0, 1.0));\
       gl_FragColor.r *= 1.0 / (1.0 + exp(-200.0 / (1.0 + 10.0 * (t.y - t.x)) * (newPos.y - refractedLight.y * t.y - 2.0 / 12.0)));\
     }\
-  ');
+  "
+  );
 }
 
 Renderer.prototype.updateCaustics = function(water) {
@@ -291,6 +313,10 @@ Renderer.prototype.updateCaustics = function(water) {
   var this_ = this;
   this.causticTex.drawTo(function() {
     gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // Enable additive blending for caustics accumulation
+    gl.enable(gl.BLEND);
+
     water.textureA.bind(0);
     this_.causticsShader.uniforms({
       light: this_.lightDir,
