@@ -301,4 +301,48 @@ export class Water {
       ),
     });
   }
+
+  // Buffer for reading pixel data
+  private readBuffer = new Float32Array(4);
+
+  getWaterAt(
+    renderer: THREE.WebGLRenderer,
+    x: number,
+    z: number
+  ): { height: number; normal: THREE.Vector3 } {
+    // x, z are world coordinates centered at 0,0
+    // Map to 0..1 UV coordinates
+    const u = x / this.poolWidth + 0.5;
+    const v = z / this.poolLength + 0.5;
+
+    // Clamp to valid texture range
+    const clampedU = Math.max(0, Math.min(1, u));
+    const clampedV = Math.max(0, Math.min(1, v));
+
+    const px = Math.floor(clampedU * (this.textureA.width - 1));
+    const py = Math.floor(clampedV * (this.textureA.height - 1));
+
+    renderer.readRenderTargetPixels(
+      this.textureA,
+      px,
+      py,
+      1,
+      1,
+      this.readBuffer
+    );
+
+    const height = this.readBuffer[0];
+    const nx = this.readBuffer[2];
+    const nz = this.readBuffer[3];
+    // Reconstruct y component of normal (assuming normalized)
+    // The shader stores: info.ba = normalize(cross(dy, dx)).xz;
+    // So nx^2 + ny^2 + nz^2 = 1 => ny = sqrt(1 - nx^2 - nz^2)
+    let ny = 1.0;
+    const xzSq = nx * nx + nz * nz;
+    if (xzSq < 1.0) {
+      ny = Math.sqrt(1.0 - xzSq);
+    }
+
+    return { height, normal: new THREE.Vector3(nx, ny, nz) };
+  }
 }

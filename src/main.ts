@@ -32,6 +32,7 @@ let velocity: THREE.Vector3;
 let gravity: THREE.Vector3;
 let radius: number;
 let paused = false;
+let mousePoint = new THREE.Vector3(100, 100, 100);
 
 // Three.js Core
 const sceneRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -111,8 +112,15 @@ window.onload = function () {
   renderer.loadDuck("/duck.glb");
 
   // 鼠标或倾斜设备时的回调（-1 to 1）
+  // todo 验证移动端设备传感器
   const onMove = (ndcX: number, ndcY: number) => {
-    // todo 一些交互
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const target = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(plane, target)) {
+      mousePoint.copy(target);
+    }
   };
 
   window.addEventListener("mousemove", (e) => {
@@ -132,6 +140,7 @@ window.onload = function () {
     const ndcX = gamma / maxTilt;
     const ndcY = -beta / maxTilt; // Tilt forward (positive beta) -> Top of screen (positive Y)
 
+    // todo 驱动鸭子移动
     onMove(ndcX, ndcY);
   });
 
@@ -216,7 +225,7 @@ window.onload = function () {
         .clone()
         .sub(new THREE.Vector3(0, 0, 0))
         .normalize()
-        .negate(); 
+        .negate();
       const viewDir = new THREE.Vector3();
       camera.getWorldDirection(viewDir);
       planeNormal = viewDir.negate();
@@ -239,7 +248,7 @@ window.onload = function () {
     }
   }
 
-  function duringDrag(x: number, y: number): void {
+  function duringDrag(x: number, y: number, fromTouch = false): void {
     switch (mode) {
       case MODE_ADD_DROPS: {
         const ray = getRay(x, y);
@@ -259,6 +268,11 @@ window.onload = function () {
             water.updateNormals(sceneRenderer);
             renderer.updateCaustics(sceneRenderer, water);
           }
+        }
+        if (fromTouch) {
+          x = (x / window.innerWidth) * 2 - 1;
+          y = -(y / window.innerHeight) * 2 + 1;
+          onMove(x, y);
         }
         break;
       }
@@ -326,7 +340,7 @@ window.onload = function () {
 
   document.ontouchmove = function (e: TouchEvent): void {
     if (e.touches.length === 1) {
-      duringDrag(e.touches[0].pageX, e.touches[0].pageY);
+      duringDrag(e.touches[0].pageX, e.touches[0].pageY, true);
     }
   };
 
@@ -342,20 +356,45 @@ window.onload = function () {
     if (seconds > 1) return;
     frame += seconds * 2;
 
+    // 1. Physics Update
     if (mode == MODE_MOVE_SPHERE) {
       velocity.set(0, 0, 0);
     } else if (useSpherePhysics) {
+      // Get water info at current position for buoyancy
+      const waterInfo = water.getWaterAt(sceneRenderer, center.x, center.z);
+      const waterHeight = waterInfo.height;
+
       const percentUnderWater = Math.max(
         0,
-        Math.min(1, (radius - center.y) / (2 * radius))
+        Math.min(1, (waterHeight + radius - center.y) / (2 * radius))
       );
 
       const buoyancyFactor = 1.0 / (1.0 - sphereFloatRatio);
 
+      // Gravity and Buoyancy (Vertical)
       const gTerm = gravity
         .clone()
         .multiplyScalar(seconds - buoyancyFactor * seconds * percentUnderWater);
       velocity.add(gTerm);
+
+      // Mouse Interaction (Repulsion)
+      if (mousePoint) {
+        const distVec = center.clone().sub(mousePoint);
+        distVec.y = 0; // Horizontal only
+        const dist = distVec.length();
+        const influenceRadius = 1;
+
+        if (dist < influenceRadius) {
+          const pushStrength = 2.0;
+          // Closer = stronger push
+          const force = distVec
+            .normalize()
+            .multiplyScalar(
+              pushStrength * (1.0 - dist / influenceRadius) * seconds
+            );
+          velocity.add(force);
+        }
+      }
 
       if (velocity.lengthSq() > 0) {
         const drag = velocity
@@ -367,12 +406,60 @@ window.onload = function () {
 
       center.add(velocity.clone().multiplyScalar(seconds));
 
+      // Wall collision (X)
+      if (center.x < radius - poolWidth / 2) {
+        center.x = radius - poolWidth / 2;
+        velocity.x = Math.abs(velocity.x) * 0.5;
+      } else if (center.x > poolWidth / 2 - radius) {
+        center.x = poolWidth / 2 - radius;
+        velocity.x = -Math.abs(velocity.x) * 0.5;
+      }
+
+      // Wall collision (Z)
+      if (center.z < radius - poolLength / 2) {
+        center.z = radius - poolLength / 2;
+        velocity.z = Math.abs(velocity.z) * 0.5;
+      } else if (center.z > poolLength / 2 - radius) {
+        center.z = poolLength / 2 - radius;
+        velocity.z = -Math.abs(velocity.z) * 0.5;
+      }
+
+      // Floor collision
       if (center.y < radius - poolDepth) {
         center.y = radius - poolDepth;
         velocity.y = Math.abs(velocity.y) * 0.7;
       }
     }
 
+    // 2. Duck Visual Update
+    renderer.duckPosition.copy(center);
+    renderer.duckPosition.y -= 0.1; // Visual tweak
+
+    // Calculate rotation: Yaw ONLY (Horizontal rotation)
+    // Up vector is always global Y (0, 1, 0)
+    const Y = new THREE.Vector3(0, 1, 0);
+    let Z = velocity.clone();
+    Z.y = 0; // Ignore vertical velocity for rotation
+
+    // If horizontal velocity is small, maintain current heading
+    if (Z.lengthSq() < 0.001) {
+      Z = new THREE.Vector3(0, 0, 1).applyQuaternion(renderer.duckQuaternion);
+      Z.y = 0;
+    }
+    Z.normalize();
+
+    // Calculate Right vector X
+    const X = new THREE.Vector3().crossVectors(Y, Z).normalize();
+    // Re-calculate Z to ensure orthogonality (though Z is already horizontal)
+    Z.crossVectors(X, Y).normalize();
+
+    const targetRot = new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(X, Y, Z)
+    );
+
+    renderer.duckQuaternion.slerp(targetRot, 0.05);
+
+    // 3. Water Simulation Interaction
     water.moveSphere(
       sceneRenderer,
       oldCenter,
@@ -397,7 +484,7 @@ window.onload = function () {
 
     // Let's stick to a simple orbit for now.
     camera.position.x = Math.sin(radY) * dist * Math.cos(radX);
-    camera.position.y = Math.sin(radX) * dist; 
+    camera.position.y = Math.sin(radX) * dist;
     camera.position.z = Math.cos(radY) * dist * Math.cos(radX);
 
     camera.lookAt(new THREE.Vector3(0, 0.5, 0));

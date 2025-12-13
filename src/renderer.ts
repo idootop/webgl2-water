@@ -129,6 +129,10 @@ export class Renderer {
   duckMesh: THREE.Object3D | null = null;
   dirLight: THREE.DirectionalLight | null = null;
 
+  // Duck state
+  duckPosition: THREE.Vector3 = new THREE.Vector3();
+  duckQuaternion: THREE.Quaternion = new THREE.Quaternion();
+
   // 渲染纹理 Render Targets
   duckRefractionTex: THREE.WebGLRenderTarget;
   resolution: THREE.Vector2 = new THREE.Vector2();
@@ -568,14 +572,8 @@ export class Renderer {
     sky: THREE.Texture
   ): void {
     if (this.duckMesh) {
-      this.duckMesh.position.copy(this.sphereCenter);
-      // 让鸭子相对小球的位置向下来一点
-      this.duckMesh.position.y -= 0.2;
-
-      // 鸭子上下起伏
-      const time = Date.now() * 0.004;
-      const bobbingAmount = Math.sin(time) * 0.1;
-      this.duckMesh.position.y += bobbingAmount;
+      this.duckMesh.position.copy(this.duckPosition);
+      this.duckMesh.quaternion.copy(this.duckQuaternion);
 
       // 渲染折射 (用于透过水面看鸭子身体)
       this.renderDuckRefraction(renderer, camera);
