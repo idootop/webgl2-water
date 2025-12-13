@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import type { Water } from "./water";
-import type { Cubemap } from "./cubemap";
 
 const helperFunctions = `
   const float IOR_AIR = 1.0;
@@ -215,7 +214,7 @@ export class Renderer {
         `
         uniform vec3 eye;
         varying vec3 vPosition;
-        uniform samplerCube sky;
+        uniform sampler2D sky;
         
             vec3 getSurfaceRayColor(vec3 origin, vec3 ray, vec3 waterColor) {
             vec3 color;
@@ -231,7 +230,12 @@ export class Renderer {
               if (hit.y < 2.0 / 12.0) {
                 color = getWallColor(hit);
               } else {
-                color = textureCube(sky, ray).rgb;
+                // Sky Dome Mapping
+                // Map ray direction to 2D texture coordinates
+                // Assuming 'sky' is a top-down view or dome texture
+                // Simple planar projection:
+                vec2 uv = ray.xz * 0.5 + 0.5;
+                color = texture2D(sky, uv).rgb;
                 color += vec3(pow(max(0.0, dot(light, ray)), 5000.0)) * vec3(10.0, 8.0, 6.0);
               }
             }
@@ -541,11 +545,11 @@ export class Renderer {
     renderer: THREE.WebGLRenderer,
     camera: THREE.Camera,
     water: Water,
-    sky: Cubemap
+    sky: THREE.Texture
   ): void {
     // Update uniforms
     this.waterMaterial.uniforms["water"].value = water.textureA.texture;
-    this.waterMaterial.uniforms["sky"].value = sky.texture;
+    this.waterMaterial.uniforms["sky"].value = sky;
     this.waterMaterial.uniforms["eye"].value = camera.position;
     this.waterMaterial.uniforms["sphereCenter"].value = this.sphereCenter;
     this.waterMaterial.uniforms["sphereRadius"].value = this.sphereRadius;

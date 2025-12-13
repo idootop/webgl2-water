@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import { Water } from "./water";
 import { Renderer } from "./renderer";
-import { Cubemap } from "./cubemap";
 
 // Global error handler
 window.onerror = (event: Event | string) => {
@@ -20,7 +19,7 @@ window.onerror = (event: Event | string) => {
 };
 
 let water: Water;
-let cubemap: Cubemap;
+let skyTexture: THREE.Texture;
 let renderer: Renderer;
 let angleX = 45;
 let angleY = -200.5;
@@ -197,14 +196,13 @@ window.onload = function () {
 
   water = new Water();
   renderer = new Renderer();
-  cubemap = new Cubemap({
-    xneg: getEl("xneg"),
-    xpos: getEl("xpos"),
-    yneg: getEl("ypos"), // Using ypos for yneg as per original
-    ypos: getEl("ypos"),
-    zneg: getEl("zneg"),
-    zpos: getEl("zpos"),
-  });
+
+  const skyImg = getEl("sky");
+  skyTexture = new THREE.Texture(skyImg);
+  skyTexture.wrapS = THREE.ClampToEdgeWrapping;
+  skyTexture.wrapT = THREE.ClampToEdgeWrapping;
+  skyTexture.minFilter = THREE.LinearFilter;
+  skyTexture.needsUpdate = true;
 
   center = new THREE.Vector3(-0.4, -0.75, 0.2);
   oldCenter = new THREE.Vector3(-0.4, -0.75, 0.2);
@@ -536,6 +534,6 @@ window.onload = function () {
 
     renderer.sphereCenter = center;
     renderer.sphereRadius = radius;
-    renderer.render(sceneRenderer, camera, water, cubemap);
+    renderer.render(sceneRenderer, camera, water, skyTexture);
   }
 };
