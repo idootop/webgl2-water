@@ -480,7 +480,7 @@ export class Renderer {
       this.scene.add(this.duckMesh);
     });
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(ambientLight);
     const dirLight = new THREE.DirectionalLight(0xffffff, 1);
     dirLight.position.copy(this.lightDir).multiplyScalar(10);
@@ -558,6 +558,8 @@ export class Renderer {
   ): void {
     if (this.duckMesh) {
       this.duckMesh.position.copy(this.sphereCenter);
+      // Adjust duck position to be lower relative to the sphere center
+      this.duckMesh.position.y -= 0.2;
 
       // 渲染折射 (用于透过水面看鸭子身体)
       this.renderDuckRefraction(renderer, camera);

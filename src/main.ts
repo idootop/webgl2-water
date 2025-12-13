@@ -47,8 +47,8 @@ let poolLength = 2;
 let containerHeight = 1.4; // Total height (walls)
 let poolDepth = 0; // Current water depth (calculated)
 let waterFillRatio = 0.7; // 0 to 1
-let sphereFloatRatio = 0.4; // 0 to 1 (Ratio of diameter that is above water at equilibrium)
-let sphereImpactStrength = 0.01; // New parameter to control impact force
+let sphereFloatRatio = 0.7; // 0 to 1 (Ratio of diameter that is above water at equilibrium)
+let sphereImpactStrength = 0.04; // New parameter to control impact force
 
 function updatePoolDimensions() {
   const waterDepth = containerHeight * waterFillRatio;
@@ -205,8 +205,8 @@ window.onload = function () {
   skyTexture.minFilter = THREE.LinearFilter;
   skyTexture.needsUpdate = true;
 
-  center = new THREE.Vector3(-0.4, -0.75, 0.2);
-  oldCenter = new THREE.Vector3(-0.4, -0.75, 0.2);
+  center = new THREE.Vector3(0, -0.1, 0);
+  oldCenter = new THREE.Vector3(0, -0.1, 0);
   velocity = new THREE.Vector3();
   gravity = new THREE.Vector3(0, -4, 0);
   radius = 0.25;
@@ -413,13 +413,6 @@ window.onload = function () {
     }
   };
 
-  document.onkeydown = function (e: KeyboardEvent): void {
-    if (e.key === " ") paused = !paused;
-    else if (e.key === "g" || e.key === "G")
-      useSpherePhysics = !useSpherePhysics;
-    else if ((e.key === "l" || e.key === "L") && paused) draw();
-  };
-
   let frame = 0;
 
   function update(seconds: number): void {
@@ -467,16 +460,6 @@ window.onload = function () {
       }
     }
 
-    // Displace water around the sphere
-    // We must pass Cloned vectors because 'center' is updated in place,
-    // and oldCenter might be a reference to the same object or mutated unexpectedly if we aren't careful.
-    // However, in this code:
-    // oldCenter = center (line 91), then in loop:
-    //   moveSphere(oldCenter, center) -> calculates diff
-    //   oldCenter.copy(center) -> updates oldCenter to match new center for NEXT frame.
-    // BUT: In JS, if we pass references to uniforms, we must be careful.
-    // The issue is likely that water.moveSphere uses the material uniforms.
-
     water.moveSphere(
       sceneRenderer,
       oldCenter,
@@ -495,7 +478,6 @@ window.onload = function () {
   }
 
   function draw(): void {
-
     // Let's implement orbit manually for camera
     const dist = 4;
     // Angles are in degrees
