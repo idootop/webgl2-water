@@ -487,29 +487,14 @@ window.onload = function () {
     oldCenter.copy(center);
 
     // Update the water simulation and graphics
-    water.stepSimulation(sceneRenderer);
-    water.stepSimulation(sceneRenderer);
+    for (let i = 0; i < 4; i++) {
+      water.stepSimulation(sceneRenderer);
+    }
     water.updateNormals(sceneRenderer);
     renderer.updateCaustics(sceneRenderer, water);
   }
 
   function draw(): void {
-    if (paused) {
-      // If L key logic needed
-    }
-
-    // Update Camera position based on Orbit angles
-    // gl.translate(0, 0, -4);
-    // gl.rotate(-angleX, 1, 0, 0);
-    // gl.rotate(-angleY, 0, 1, 0);
-    // gl.translate(0, 0.5, 0);
-
-    // In lightgl (OpenGL), camera transform is inverse of modelview.
-    // Here we orbit camera around 0,0,0
-    // Original:
-    // translate(0,0,-4) -> move world away by 4 (or camera back by 4)
-    // rotate -> rotate world
-    // translate(0, 0.5, 0) -> move world up 0.5 (or camera down)
 
     // Let's implement orbit manually for camera
     const dist = 4;

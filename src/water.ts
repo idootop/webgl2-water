@@ -32,8 +32,8 @@ export class Water {
 
     const geometry = new THREE.PlaneGeometry(2, 2);
 
-    this.textureA = new THREE.WebGLRenderTarget(256, 256, {
-      type: THREE.FloatType, // Equivalent to gl.FLOAT
+    this.textureA = new THREE.WebGLRenderTarget(1024, 1024, {
+      type: THREE.FloatType,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
