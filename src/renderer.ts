@@ -94,7 +94,7 @@ const helperFunctions = `
     } else {
       /* shadow for the rim of the pool */
       vec2 t = intersectCube(point, refractedLight, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
-      diffuse *= 1.0 / (1.0 + exp(-200.0 / (1.0 + 10.0 * (t.y - t.x)) * (point.y + refractedLight.y * t.y - 2.0 / 12.0)));
+      diffuse *= 1.0 / (1.0 + exp(-200.0 / (1.0 + 10.0 * (t.y - t.x)) * (point.y + refractedLight.y * t.y - wallHeight)));
       
       scale += diffuse * 0.5;
     }
@@ -243,7 +243,7 @@ export class Renderer {
               } else {
                 vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
                 vec3 hit = origin + ray * t.y;
-                if (hit.y < 2.0 / 12.0) {
+                if (hit.y < wallHeight - 0.001) {
                   color = getWallColor(hit);
                 } else {
                   // Sky Dome Mapping
@@ -489,7 +489,7 @@ export class Renderer {
                gl_FragColor.g = shadow;
 
                vec2 t = intersectCube(newPos, -refractedLight, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
-               gl_FragColor.r *= 1.0 / (1.0 + exp(-200.0 / (1.0 + 10.0 * (t.y - t.x)) * (newPos.y - refractedLight.y * t.y - 2.0 / 12.0)));
+               gl_FragColor.r *= 1.0 / (1.0 + exp(-200.0 / (1.0 + 10.0 * (t.y - t.x)) * (newPos.y - refractedLight.y * t.y - wallHeight)));
             }
          `,
       side: THREE.DoubleSide,
