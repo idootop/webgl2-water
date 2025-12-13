@@ -55,7 +55,8 @@ const helperFunctions = `
     vec4 info = texture2D(water, point.xz / (poolSize * 2.0) + 0.5);
     
     if (point.y < info.r) {
-      vec4 caustic = texture2D(causticTex, 0.75 * (point.xz - point.y * refractedLight.xz / refractedLight.y) / poolSize.x * 0.5 + 0.5); 
+      // Fixed aspect ratio sampling for caustics on sphere
+      vec4 caustic = texture2D(causticTex, 0.75 * (point.xz - point.y * refractedLight.xz / refractedLight.y) / (poolSize * 2.0) + 0.5); 
       diffuse *= caustic.r * 4.0;
     }
     color += diffuse;
@@ -271,8 +272,8 @@ export class Renderer {
              vec2 screenUV = gl_FragCoord.xy / resolution;
              
              // 2. 根据法线进行偏移 (Screen Space Refraction)
-             // 0.05 是折射强度系数，可调整
-             vec2 refractionUV = screenUV - (normal.xz * 0.05); 
+             // Use aspect-correct offset strength
+             vec2 refractionUV = screenUV - (normal.xz * vec2(0.05, 0.05 * resolution.x / resolution.y)); 
              
              // 3. 采样之前渲染好的鸭子纹理
              vec4 duckSample = texture2D(duckRefraction, refractionUV);
@@ -419,7 +420,9 @@ export class Renderer {
               rawPos.z *= poolSize.y;
               oldPos = project(rawPos, refractedLight, refractedLight);
               newPos = project(rawPos + vec3(0.0, info.r, 0.0), ray, refractedLight);
-              gl_Position = vec4(0.75 * (newPos.xz + refractedLight.xz / refractedLight.y) / poolSize.x, 0.0, 1.0);
+              
+              // Correct projection to cover full texture regardless of aspect ratio
+              gl_Position = vec4(0.75 * (newPos.xz + refractedLight.xz / refractedLight.y) / poolSize, 0.0, 1.0);
             }
          `,
       fragmentShader:

@@ -49,6 +49,7 @@ export class Water {
         center: { value: new THREE.Vector2() },
         radius: { value: 0 },
         strength: { value: 0 },
+        poolSize: { value: new THREE.Vector2(this.poolWidth, this.poolLength) },
       },
       vertexShader: vertexShader,
       fragmentShader: `
@@ -57,12 +58,21 @@ export class Water {
         uniform vec2 center;
         uniform float radius;
         uniform float strength;
+        uniform vec2 poolSize;
         varying vec2 coord;
         void main() {
           vec4 info = texture2D(textureMap, coord);
-          // center is normalized -1 to 1. coord is 0 to 1.
-          // center * 0.5 + 0.5 transforms center to 0-1 space.
-          float drop = max(0.0, 1.0 - length(center * 0.5 + 0.5 - coord) / radius);
+          
+          // center and coord are in UV space (0..1)
+          // We want to calculate distance in World space to keep drops circular.
+          // center input is normalized -1..1 from addDrop.
+          
+          vec2 uvVector = (center * 0.5 + 0.5) - coord;
+          vec2 worldVector = uvVector * poolSize; 
+          
+          float dist = length(worldVector);
+          float drop = max(0.0, 1.0 - dist / radius);
+          
           drop = 0.5 - cos(drop * PI) * 0.5;
           info.r += drop * strength;
           gl_FragColor = info;
@@ -74,23 +84,37 @@ export class Water {
       uniforms: {
         textureMap: { value: null },
         delta: { value: new THREE.Vector2() },
+        poolSize: { value: new THREE.Vector2(this.poolWidth, this.poolLength) },
       },
       vertexShader: vertexShader,
       fragmentShader: `
         uniform sampler2D textureMap;
         uniform vec2 delta;
+        uniform vec2 poolSize;
         varying vec2 coord;
         void main() {
           vec4 info = texture2D(textureMap, coord);
+          
           vec2 dx = vec2(delta.x, 0.0);
           vec2 dy = vec2(0.0, delta.y);
-          float average = (
-            texture2D(textureMap, coord - dx).r +
-            texture2D(textureMap, coord - dy).r +
-            texture2D(textureMap, coord + dx).r +
-            texture2D(textureMap, coord + dy).r
-          ) * 0.25;
-          info.g += (average - info.r) * 2.0;
+          
+          float u = info.r;
+          float u_right = texture2D(textureMap, coord + dx).r;
+          float u_left  = texture2D(textureMap, coord - dx).r;
+          float u_up    = texture2D(textureMap, coord + dy).r;
+          float u_down  = texture2D(textureMap, coord - dy).r;
+          
+          // Weighted Laplacian for non-square aspect ratio
+          // weights are proportional to 1 / physical_distance^2
+          // physical_distance_x = poolSize.x * delta.x
+          // physical_distance_y = poolSize.y * delta.y
+          
+          float fx = 1.0 / (poolSize.x * poolSize.x);
+          float fy = 1.0 / (poolSize.y * poolSize.y);
+          
+          float spatial_average = ( (u_left + u_right) * fx + (u_up + u_down) * fy ) / (2.0 * (fx + fy));
+          
+          info.g += (spatial_average - u) * 2.0;
           info.g *= 0.995;
           info.r += info.g;
           gl_FragColor = info;
@@ -102,16 +126,24 @@ export class Water {
       uniforms: {
         textureMap: { value: null },
         delta: { value: new THREE.Vector2() },
+        poolSize: { value: new THREE.Vector2(this.poolWidth, this.poolLength) },
       },
       vertexShader: vertexShader,
       fragmentShader: `
         uniform sampler2D textureMap;
         uniform vec2 delta;
+        uniform vec2 poolSize;
         varying vec2 coord;
         void main() {
           vec4 info = texture2D(textureMap, coord);
-          vec3 dx = vec3(delta.x, texture2D(textureMap, vec2(coord.x + delta.x, coord.y)).r - info.r, 0.0);
-          vec3 dy = vec3(0.0, texture2D(textureMap, vec2(coord.x, coord.y + delta.y)).r - info.r, delta.y);
+          
+          // Physical dx and dy
+          float dx_phys = poolSize.x * delta.x; 
+          float dy_phys = poolSize.y * delta.y;
+          
+          vec3 dx = vec3(dx_phys, texture2D(textureMap, vec2(coord.x + delta.x, coord.y)).r - info.r, 0.0);
+          vec3 dy = vec3(0.0, texture2D(textureMap, vec2(coord.x, coord.y + delta.y)).r - info.r, dy_phys);
+          
           info.ba = normalize(cross(dy, dx)).xz;
           gl_FragColor = info;
         }
@@ -125,6 +157,7 @@ export class Water {
         newCenter: { value: new THREE.Vector3() },
         radius: { value: 0 },
         strength: { value: 0.01 },
+        poolSize: { value: new THREE.Vector2(this.poolWidth, this.poolLength) },
       },
       vertexShader: vertexShader,
       fragmentShader: `
@@ -133,26 +166,28 @@ export class Water {
         uniform vec3 newCenter;
         uniform float radius;
         uniform float strength;
+        uniform vec2 poolSize;
         varying vec2 coord;
         
         float volumeInSphere(vec3 center) {
-          vec3 toCenter = vec3(coord.x * 2.0 - 1.0, 0.0, coord.y * 2.0 - 1.0) - center;
+          // Convert UV to World Pos
+          vec3 pos = vec3( (coord.x * 2.0 - 1.0) * poolSize.x/2.0, 0.0, (coord.y * 2.0 - 1.0) * poolSize.y/2.0 );
+          
+          // Convert normalized center to World Pos
+          vec3 worldCenter = vec3(center.x * poolSize.x/2.0, center.y, center.z * poolSize.y/2.0);
+          
+          vec3 toCenter = pos - worldCenter;
+          
+          // radius is physical radius
           float t = length(toCenter) / radius;
           float dy = exp(-pow(t * 1.5, 6.0));
-          float ymin = min(0.0, center.y - dy);
-          float ymax = min(max(0.0, center.y + dy), ymin + 2.0 * dy);
+          float ymin = min(0.0, worldCenter.y - dy);
+          float ymax = min(max(0.0, worldCenter.y + dy), ymin + 2.0 * dy);
           return (ymax - ymin) * strength;
         }
         
         void main() {
           vec4 info = texture2D(textureMap, coord);
-          /* 
-             The logic is:
-             Current Water Height += Volume Removed by OLD sphere position
-             Current Water Height -= Volume Added by NEW sphere position
-             
-             Basically: Water flows back in where sphere WAS, and flows out where sphere IS.
-          */
           info.r += volumeInSphere(oldCenter);
           info.r -= volumeInSphere(newCenter);
           gl_FragColor = info;
@@ -167,6 +202,11 @@ export class Water {
   updateDimensions(width: number, length: number) {
     this.poolWidth = width;
     this.poolLength = length;
+    const poolSizeVal = new THREE.Vector2(width, length);
+    this.dropMaterial.uniforms.poolSize.value.copy(poolSizeVal);
+    this.updateMaterial.uniforms.poolSize.value.copy(poolSizeVal);
+    this.normalMaterial.uniforms.poolSize.value.copy(poolSizeVal);
+    this.sphereMaterial.uniforms.poolSize.value.copy(poolSizeVal);
   }
 
   // Helper to render to target
@@ -204,16 +244,14 @@ export class Water {
     radius: number,
     strength: number
   ): void {
-    // Normalize coordinates to -1..1
+    // Pass -1..1 coordinates
     const nx = x / (this.poolWidth / 2);
     const ny = y / (this.poolLength / 2);
 
-    // Normalize radius (approximation)
-    const nRadius = radius / ((this.poolWidth + this.poolLength) / 4);
-
+    // Pass PHYSICAL radius
     this.renderTo(renderer, this.dropMaterial, {
       center: new THREE.Vector2(nx, ny),
-      radius: nRadius,
+      radius: radius,
       strength,
     });
   }
@@ -225,7 +263,7 @@ export class Water {
     radius: number,
     strength: number
   ): void {
-    // Normalize coordinates
+    // Normalize coordinates -1..1 for center passing
     const scaleX = this.poolWidth / 2;
     const scaleZ = this.poolLength / 2;
 
@@ -237,12 +275,11 @@ export class Water {
     nNew.x /= scaleX;
     nNew.z /= scaleZ;
 
-    const nRadius = radius / ((scaleX + scaleZ) / 2);
-
+    // Pass PHYSICAL radius
     this.renderTo(renderer, this.sphereMaterial, {
       oldCenter: nOld,
       newCenter: nNew,
-      radius: nRadius,
+      radius: radius,
       strength,
     });
   }
