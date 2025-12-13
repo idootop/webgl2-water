@@ -21,8 +21,8 @@ window.onerror = (event: Event | string) => {
 let water: Water;
 let skyTexture: THREE.Texture;
 let renderer: Renderer;
-let angleX = 45;
-let angleY = -200.5;
+let angleX = 90;
+let angleY = 180;
 
 // Sphere physics info
 let useSpherePhysics = true;
@@ -112,14 +112,26 @@ const createInput = (
   uiContainer.appendChild(div);
 };
 
-createInput("Width", poolWidth, (val) => {
-  poolWidth = val;
-  updatePoolDimensions();
-});
-createInput("Length", poolLength, (val) => {
-  poolLength = val;
-  updatePoolDimensions();
-});
+createInput(
+  "Width",
+  poolWidth,
+  (val) => {
+    poolWidth = val;
+    updatePoolDimensions();
+  },
+  0.1,
+  20
+);
+createInput(
+  "Length",
+  poolLength,
+  (val) => {
+    poolLength = val;
+    updatePoolDimensions();
+  },
+  0.1,
+  20
+);
 createInput("Total Height", containerHeight, (val) => {
   containerHeight = val;
   updatePoolDimensions();
@@ -160,15 +172,24 @@ createInput(
 
 window.onload = function () {
   const ratio = window.devicePixelRatio || 1;
+  const dist = 4;
 
   function onresize(): void {
-    const width = innerWidth - 20;
+    const width = innerWidth;
     const height = innerHeight;
     sceneRenderer.setSize(width, height);
     sceneRenderer.setPixelRatio(ratio);
 
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+
+    // Auto-resize pool to fill screen (top-down view)
+    const visibleHeight = 2 * dist * Math.tan((45 * Math.PI) / 360);
+    const visibleWidth = visibleHeight * camera.aspect;
+
+    poolWidth = visibleWidth;
+    poolLength = visibleHeight;
+    updatePoolDimensions();
   }
 
   document.body.appendChild(sceneRenderer.domElement);
@@ -479,7 +500,6 @@ window.onload = function () {
 
   function draw(): void {
     // Let's implement orbit manually for camera
-    const dist = 4;
     // Angles are in degrees
     const radX = (angleX * Math.PI) / 180;
     const radY = (angleY * Math.PI) / 180;
