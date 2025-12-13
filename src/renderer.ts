@@ -452,9 +452,8 @@ export class Renderer {
       blending: THREE.CustomBlending,
       blendEquation: THREE.AddEquation,
       blendSrc: THREE.OneFactor,
-      blendDst: THREE.OneFactor,
+      blendDst: THREE.SrcColorFactor,
       transparent: true,
-      depthTest: false,
     });
     this.causticsMesh = new THREE.Mesh(waterGeometry, this.causticsMaterial);
     this.causticsScene.add(this.causticsMesh);
@@ -481,9 +480,9 @@ export class Renderer {
       this.scene.add(this.duckMesh);
     });
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     this.scene.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
     dirLight.position.copy(this.lightDir).multiplyScalar(10);
     this.scene.add(dirLight);
   }
