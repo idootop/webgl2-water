@@ -311,17 +311,16 @@ export class Renderer {
           // For now, simple planar reflection in getSurfaceRayColor uses exact surface pos.
           
           vec3 reflectedColor = getSurfaceRayColor(position, reflectedRay, abovewaterColor);
-          vec3 refractedColor = vec3(0.0);
-          if (length(refractedRay) > 0.001) {
-             refractedColor = getSurfaceRayColor(position, refractedRay, abovewaterColor);
-          } else {
+          
+          if (length(refractedRay) <= 0.001) {
              fresnel = 1.0; // Total Internal Reflection
           }
           
-          gl_FragColor = vec4(mix(refractedColor, reflectedColor, fresnel), 1.0);
+          gl_FragColor = vec4(reflectedColor, fresnel);
         }
       `,
       side: THREE.DoubleSide,
+      transparent: true,
     });
     this.waterMesh = new THREE.Mesh(waterGeometry, this.waterMaterial);
     this.waterMesh.frustumCulled = false;
