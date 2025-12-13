@@ -61,115 +61,6 @@ function updatePoolDimensions() {
   water.updateDimensions(poolWidth, poolLength);
 }
 
-// Create UI
-const uiContainer = document.createElement("div");
-uiContainer.style.position = "absolute";
-uiContainer.style.top = "10px";
-uiContainer.style.right = "10px";
-uiContainer.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-uiContainer.style.padding = "10px";
-uiContainer.style.borderRadius = "5px";
-uiContainer.style.color = "white";
-uiContainer.style.zIndex = "100";
-document.body.appendChild(uiContainer);
-
-const createInput = (
-  label: string,
-  value: number,
-  onChange: (val: number) => void,
-  min: number = 0.1,
-  max: number = 5,
-  step: number = 0.1
-) => {
-  const div = document.createElement("div");
-  div.style.marginBottom = "5px";
-
-  const lbl = document.createElement("label");
-  lbl.textContent = label + ": ";
-  lbl.style.display = "inline-block";
-  lbl.style.width = "80px"; // Increased width for longer labels
-  div.appendChild(lbl);
-
-  const input = document.createElement("input");
-  input.type = "range";
-  input.min = String(min);
-  input.max = String(max);
-  input.step = String(step);
-  input.value = String(value);
-  input.style.width = "100px";
-  input.oninput = (e) => {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    span.textContent = val.toFixed(2);
-    onChange(val);
-  };
-  div.appendChild(input);
-
-  const span = document.createElement("span");
-  span.textContent = value.toFixed(2);
-  span.style.marginLeft = "5px";
-  div.appendChild(span);
-
-  uiContainer.appendChild(div);
-};
-
-createInput(
-  "Width",
-  poolWidth,
-  (val) => {
-    poolWidth = val;
-    updatePoolDimensions();
-  },
-  0.1,
-  20
-);
-createInput(
-  "Length",
-  poolLength,
-  (val) => {
-    poolLength = val;
-    updatePoolDimensions();
-  },
-  0.1,
-  20
-);
-createInput("Total Height", containerHeight, (val) => {
-  containerHeight = val;
-  updatePoolDimensions();
-});
-createInput(
-  "Water Fill",
-  waterFillRatio,
-  (val) => {
-    waterFillRatio = val;
-    updatePoolDimensions();
-  },
-  0.05,
-  1.0,
-  0.05
-);
-
-createInput(
-  "Sphere Float",
-  sphereFloatRatio,
-  (val) => {
-    sphereFloatRatio = val;
-  },
-  0.0,
-  0.9,
-  0.05
-);
-
-createInput(
-  "Impact Force",
-  sphereImpactStrength,
-  (val) => {
-    sphereImpactStrength = val;
-  },
-  0.01,
-  1.0,
-  0.01
-);
-
 window.onload = function () {
   const ratio = window.devicePixelRatio || 1;
   const dist = 4;
@@ -299,13 +190,6 @@ window.onload = function () {
   let oldX: number, oldY: number;
 
   function getRay(x: number, y: number): THREE.Ray {
-    // Normalised Device Coordinates (NDC)
-    // x, y are pageX, pageY.
-    // canvas might have offset? "width = innerWidth - 20".
-    // But event.pageX is relative to document.
-    // Let's assume canvas is at top left but maybe not?
-    // document.body.appendChild(canvas).
-
     const rect = sceneRenderer.domElement.getBoundingClientRect();
     const ndcX = ((x - rect.left) / rect.width) * 2 - 1;
     const ndcY = -((y - rect.top) / rect.height) * 2 + 1;
@@ -332,19 +216,12 @@ window.onload = function () {
         .clone()
         .sub(new THREE.Vector3(0, 0, 0))
         .normalize()
-        .negate(); // View vector?
-      // Original: tracer.getRayForPixel(width/2, height/2).negative() -> Vector pointing FROM center TO eye (if ray is eye->pixel).
-      // Wait, ray is Eye -> Pixel. Negative is Pixel -> Eye.
-      // Actually original was: planeNormal = ray_center.negative();
-      // Ray from eye to center of screen. Negative is Z axis of camera in world space (roughly).
-      // Let's just use camera forward vector negated? Or just camera direction.
+        .negate(); 
       const viewDir = new THREE.Vector3();
       camera.getWorldDirection(viewDir);
       planeNormal = viewDir.negate();
     } else {
       // Plane interaction
-      // pointOnPlane = tracer.eye.add(ray.multiply(-tracer.eye.y / ray.y));
-      // This intersects with Plane y=0.
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const pointOnPlane = new THREE.Vector3();
       const hit = ray.intersectPlane(plane, pointOnPlane);
@@ -376,7 +253,7 @@ window.onload = function () {
             pointOnPlane.x,
             pointOnPlane.z,
             0.03,
-            0.01
+            0.02
           );
           if (paused) {
             water.updateNormals(sceneRenderer);
@@ -473,14 +350,6 @@ window.onload = function () {
         Math.min(1, (radius - center.y) / (2 * radius))
       );
 
-      // velocity = velocity.add(gravity.multiply(seconds - 1.1 * seconds * percentUnderWater));
-
-      // Calculate buoyancy factor based on target float ratio
-      // At equilibrium: Buoyancy = Gravity
-      // Buoyancy = k * Gravity * percentSubmerged
-      // k * (1 - sphereFloatRatio) = 1
-      // k = 1 / (1 - sphereFloatRatio)
-
       const buoyancyFactor = 1.0 / (1.0 - sphereFloatRatio);
 
       const gTerm = gravity
@@ -488,8 +357,6 @@ window.onload = function () {
         .multiplyScalar(seconds - buoyancyFactor * seconds * percentUnderWater);
       velocity.add(gTerm);
 
-      // velocity = velocity.subtract(velocity.unit().multiply(percentUnderWater * seconds * velocity.dot(velocity)));
-      // Note: velocity.unit() -> normalize()
       if (velocity.lengthSq() > 0) {
         const drag = velocity
           .clone()
@@ -524,26 +391,16 @@ window.onload = function () {
   }
 
   function draw(): void {
-    // Let's implement orbit manually for camera
     // Angles are in degrees
     const radX = (angleX * Math.PI) / 180;
     const radY = (angleY * Math.PI) / 180;
 
-    // Calculate camera position
-    // Rotation Order: Y then X?
-
     // Let's stick to a simple orbit for now.
     camera.position.x = Math.sin(radY) * dist * Math.cos(radX);
-    camera.position.y = Math.sin(radX) * dist; // + some offset?
+    camera.position.y = Math.sin(radX) * dist; 
     camera.position.z = Math.cos(radY) * dist * Math.cos(radX);
 
-    // Adjust for the translations
-    // The code had `gl.translate(0, 0.5, 0)` before drawing geometry.
-    // This moves geometry UP by 0.5.
-    // So the pivot point is effectively (0, 0, 0) of the geometry, which is displayed at y=0.5 relative to rotation center.
-    // Effectively we look at point (0, 0.5, 0)?
-
-    camera.lookAt(new THREE.Vector3(0, 0.5, 0)); // Guessing offset
+    camera.lookAt(new THREE.Vector3(0, 0.5, 0));
 
     renderer.sphereCenter = center;
     renderer.sphereRadius = radius;
