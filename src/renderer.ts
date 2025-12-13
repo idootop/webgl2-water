@@ -569,8 +569,13 @@ export class Renderer {
   ): void {
     if (this.duckMesh) {
       this.duckMesh.position.copy(this.sphereCenter);
-      // Adjust duck position to be lower relative to the sphere center
+      // 让鸭子相对小球的位置向下来一点
       this.duckMesh.position.y -= 0.2;
+
+      // 鸭子上下起伏
+      const time = Date.now() * 0.004;
+      const bobbingAmount = Math.sin(time) * 0.1;
+      this.duckMesh.position.y += bobbingAmount;
 
       // 渲染折射 (用于透过水面看鸭子身体)
       this.renderDuckRefraction(renderer, camera);

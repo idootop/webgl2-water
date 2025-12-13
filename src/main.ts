@@ -251,8 +251,8 @@ window.onload = function () {
   skyTexture.minFilter = THREE.LinearFilter;
   skyTexture.needsUpdate = true;
 
-  center = new THREE.Vector3(0, -0.1, 0);
-  oldCenter = new THREE.Vector3(0, -0.1, 0);
+  center = new THREE.Vector3(0, 0, 0);
+  oldCenter = new THREE.Vector3(0, 0, 0);
   velocity = new THREE.Vector3();
   gravity = new THREE.Vector3(0, -4, 0);
   radius = 0.25;
