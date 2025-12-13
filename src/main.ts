@@ -111,8 +111,6 @@ window.onload = function () {
   renderer = new Renderer();
   renderer.loadDuck("/duck.glb");
 
-  // 鼠标或倾斜设备时的回调（-1 to 1）
-  // todo 验证移动端设备传感器
   const onMove = (ndcX: number, ndcY: number) => {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
@@ -130,18 +128,56 @@ window.onload = function () {
   });
 
   window.addEventListener("deviceorientation", (e) => {
-    // Use gamma (left/right) for X and beta (front/back) for Z
     if (e.gamma === null || e.beta === null) return;
 
     const maxTilt = 30; // degrees
     const gamma = Math.min(Math.max(e.gamma, -maxTilt), maxTilt);
     const beta = Math.min(Math.max(e.beta, -maxTilt), maxTilt);
 
-    const ndcX = gamma / maxTilt;
-    const ndcY = -beta / maxTilt; // Tilt forward (positive beta) -> Top of screen (positive Y)
+    const ndcX = -(gamma / maxTilt);
+    const ndcY = -(beta / maxTilt);
 
-    // todo 驱动鸭子移动
-    onMove(ndcX, ndcY);
+    // 1. 获取鸭子在屏幕上的 NDC 坐标
+    const duckScreenPos = center.clone().project(camera);
+
+    // 2. 计算输入向量 (斥力点相对于鸭子的方向)
+    // ndcX < 0 (向左倾斜) -> 鸭子向左 -> 斥力点在右 -> +X 方向
+    // ndcY < 0 (向前倾斜) -> 鸭子向前 -> 斥力点在后 -> -Y 方向
+    const inputVec = new THREE.Vector2(-ndcX, ndcY);
+    const intensity = inputVec.length();
+
+    // 3. 死区处理 & 设置斥力点
+    if (intensity < 0.1) {
+      // 倾斜很小时，移走斥力点，停止施力
+      mousePoint.set(100, 100, 100);
+    } else {
+      // 归一化方向
+      inputVec.normalize();
+
+      // 4. 寻找世界空间中的对应方向
+      // 在屏幕空间，从鸭子位置向 inputVec 方向移动一点点
+      const raycaster = new THREE.Raycaster();
+      const offsetNDC = new THREE.Vector2(duckScreenPos.x, duckScreenPos.y).add(
+        inputVec.clone().multiplyScalar(0.05)
+      ); // 偏移一点点找方向
+
+      raycaster.setFromCamera(offsetNDC, camera);
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const targetPoint = new THREE.Vector3();
+
+      if (raycaster.ray.intersectPlane(plane, targetPoint)) {
+        // 计算世界空间的方向向量 (从鸭子指向斥力点)
+        const worldDir = targetPoint.sub(center).normalize();
+        worldDir.y = 0; // 确保水平
+
+        // 5. 根据倾斜强度决定距离
+        const clampedIntensity = Math.min(intensity, 1.0); // [0,1]
+        const dist = 1 - clampedIntensity * 0.5;
+
+        // 设置 mousePoint 驱动鸭子移动
+        mousePoint.copy(center).add(worldDir.multiplyScalar(dist));
+      }
+    }
   });
 
   const skyImg = getEl("sky");
