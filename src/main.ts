@@ -25,7 +25,7 @@ let angleX = 45;
 let angleY = -200.5;
 
 // Sphere physics info
-let useSpherePhysics = false;
+let useSpherePhysics = true;
 let center: THREE.Vector3;
 let oldCenter: THREE.Vector3;
 let velocity: THREE.Vector3;
@@ -47,7 +47,7 @@ let poolLength = 2;
 let containerHeight = 1.4; // Total height (walls)
 let poolDepth = 0; // Current water depth (calculated)
 let waterFillRatio = 0.7; // 0 to 1
-let sphereFloatRatio = 0.1; // 0 to 1 (Ratio of diameter that is above water at equilibrium)
+let sphereFloatRatio = 0.4; // 0 to 1 (Ratio of diameter that is above water at equilibrium)
 let sphereImpactStrength = 0.01; // New parameter to control impact force
 
 function updatePoolDimensions() {
@@ -196,6 +196,7 @@ window.onload = function () {
 
   water = new Water();
   renderer = new Renderer();
+  renderer.loadDuck("/duck.glb");
 
   const skyImg = getEl("sky");
   skyTexture = new THREE.Texture(skyImg);

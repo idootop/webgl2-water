@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { Water } from "./water";
 
 const helperFunctions = `
@@ -51,29 +52,10 @@ const helperFunctions = `
     vec3 sphereNormal = (point - sphereCenter) / sphereRadius;
     vec3 refractedLight = refract(-light, vec3(0.0, 1.0, 0.0), IOR_AIR / IOR_WATER);
     float diffuse = max(0.0, dot(-refractedLight, sphereNormal)) * 0.5;
-    vec4 info = texture2D(water, point.xz * 0.5 + 0.5); // NOTE: This assumes point.xz is [-1,1]. If pool is larger, we need to map correctly.
-    // If texture is mapped to pool surface, then UV = (point.xz / poolSize / 2.0) + 0.5 ?
-    // Actually current logic: 'point.xz * 0.5 + 0.5' implies point.xz is in [-1, 1].
-    // If we scale the pool, we want the texture to stretch? Or repeat?
-    // Water simulation is usually 0-1 texture. If we stretch the pool, we stretch the simulation.
-    // But 'point.xz' will be in [-poolSize.x, poolSize.x].
-    // So we need to normalize: 'point.xz / poolSize / 2.0' (wait, poolSize is half dimension).
-    // 'point.xz / (poolSize * 2.0) + 0.5' ? No.
-    // 'point.xz / (2.0 * poolSize) + 0.5'. 
-    // If poolSize = 1.0 (default), then point.xz / 2.0 + 0.5 = point.xz * 0.5 + 0.5. Correct.
-    
-    vec2 simCoord = point.xz / (poolSize * 2.0) + 0.5; // Normalized to 0-1 for water texture lookups
-
-    // But wait, existing code logic for texture mapping:
-    // 'texture2D(water, point.xz * 0.5 + 0.5)'
-    // If we change pool size, we likely want the water simulation to span the whole pool.
+    vec4 info = texture2D(water, point.xz / (poolSize * 2.0) + 0.5);
     
     if (point.y < info.r) {
       vec4 caustic = texture2D(causticTex, 0.75 * (point.xz - point.y * refractedLight.xz / refractedLight.y) / poolSize.x * 0.5 + 0.5); 
-      // Caustic texture mapping might also need adjustment.
-      // Original: 0.75 * (pos) * 0.5 + 0.5. 
-      // Let's stick to simple mapping for now: map physical pool range to 0-1 texture range.
-      
       diffuse *= caustic.r * 4.0;
     }
     color += diffuse;
@@ -104,7 +86,6 @@ const helperFunctions = `
     vec3 refractedLight = -refract(-light, vec3(0.0, 1.0, 0.0), IOR_AIR / IOR_WATER);
     float diffuse = max(0.0, dot(refractedLight, normal));
     
-    // Fix water texture lookup
     vec4 info = texture2D(water, point.xz / (poolSize * 2.0) + 0.5);
     
     if (point.y < info.r) {
@@ -147,6 +128,12 @@ export class Renderer {
 
   scene: THREE.Scene;
 
+  // Duck related
+  duckMesh: THREE.Object3D | null = null;
+  duckReflectionTex: THREE.WebGLRenderTarget;
+  reflectionCamera: THREE.PerspectiveCamera;
+  textureMatrix: THREE.Matrix4 = new THREE.Matrix4();
+
   // Dimensions
   poolWidth: number = 2;
   poolLength: number = 2;
@@ -172,6 +159,16 @@ export class Renderer {
       magFilter: THREE.LinearFilter,
     });
 
+    this.duckReflectionTex = new THREE.WebGLRenderTarget(512, 512, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat,
+      wrapS: THREE.ClampToEdgeWrapping,
+      wrapT: THREE.ClampToEdgeWrapping,
+    });
+
+    this.reflectionCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+
     const poolSizeVal = new THREE.Vector2(
       this.poolWidth / 2,
       this.poolLength / 2
@@ -193,6 +190,8 @@ export class Renderer {
         poolHeight: { value: this.poolHeight },
         wallHeight: { value: this.wallHeight },
         poolSize: { value: poolSizeVal },
+        duckReflection: { value: this.duckReflectionTex.texture },
+        textureMatrix: { value: new THREE.Matrix4() },
       },
       vertexShader: `
         uniform sampler2D water;
@@ -215,30 +214,63 @@ export class Renderer {
         uniform vec3 eye;
         varying vec3 vPosition;
         uniform sampler2D sky;
+        uniform sampler2D duckReflection;
+        uniform mat4 textureMatrix;
         
             vec3 getSurfaceRayColor(vec3 origin, vec3 ray, vec3 waterColor) {
             vec3 color;
             float q = intersectSphere(origin, ray, sphereCenter, sphereRadius);
+            
+            // NOTE: We keep sphere intersection for 'underwater' look if needed, 
+            // but for reflection above water, we prefer the texture if available.
+            // Actually, let's keep the logic: checks sphere first. 
+            // If the sphere is hidden, we shouldn't see it? 
+            // But we use the sphere for physics visualization fallback?
+            // Let's remove sphere rendering from reflection if duck is present.
+            // Since we can't easily toggle in shader, we'll assume the texture covers the duck.
+            
+            bool hitSphere = false;
             if (q < 1.0e6) {
-              color = getSphereColor(origin + ray * q);
-            } else if (ray.y < 0.0) {
-              vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
-              color = getWallColor(origin + ray * t.y);
-            } else {
-              vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
-              vec3 hit = origin + ray * t.y;
-              if (hit.y < 2.0 / 12.0) {
-                color = getWallColor(hit);
+               // color = getSphereColor(origin + ray * q);
+               // hitSphere = true;
+               // Hiding sphere reflection to show duck
+            } 
+            
+            if (!hitSphere) {
+              if (ray.y < 0.0) {
+                vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
+                color = getWallColor(origin + ray * t.y);
               } else {
-                // Sky Dome Mapping
-                // Map ray direction to 2D texture coordinates
-                // Assuming 'sky' is a top-down view or dome texture
-                // Simple planar projection:
-                vec2 uv = ray.xz * 0.5 + 0.5;
-                color = texture2D(sky, uv).rgb;
-                color += vec3(pow(max(0.0, dot(light, ray)), 5000.0)) * vec3(10.0, 8.0, 6.0);
+                vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
+                vec3 hit = origin + ray * t.y;
+                if (hit.y < 2.0 / 12.0) {
+                  color = getWallColor(hit);
+                } else {
+                  // Sky Dome Mapping
+                  vec2 uv = ray.xz * 0.5 + 0.5;
+                  color = texture2D(sky, uv).rgb;
+                  color += vec3(pow(max(0.0, dot(light, ray)), 5000.0)) * vec3(10.0, 8.0, 6.0);
+                }
               }
             }
+            
+            // Apply Duck Reflection (Planar)
+            // We project the origin (surface point) to reflection texture space
+            // Ideally we should project 'origin + ray * dist', but planar reflection works on surface.
+            // Simple Projective Texture Mapping
+            vec4 clipPos = textureMatrix * vec4(origin, 1.0);
+            vec3 clipPos3 = clipPos.xyz / clipPos.w;
+            if (clipPos3.z > 0.0 && clipPos3.z < 1.0) { // Check if in front of camera
+                 vec2 reflectionUV = clipPos3.xy * 0.5 + 0.5;
+                 // Simple perturbation by normal could happen in caller, but here 'origin' is on water.
+                 // We can use the 'normal' available in main to perturb UV? 
+                 // Not available in this function.
+                 
+                 vec4 duckCol = texture2D(duckReflection, reflectionUV);
+                 // Blend based on alpha
+                 color = mix(color, duckCol.rgb, duckCol.a);
+            }
+
             if (ray.y < 0.0) color *= waterColor;
             return color;
         }
@@ -246,7 +278,6 @@ export class Renderer {
         void main() {
           vec3 position = vPosition;
           
-          // Map world pos to 0-1 for water texture
           vec2 coord = position.xz / (poolSize * 2.0) + 0.5;
           
           vec4 info = texture2D(water, coord);
@@ -276,6 +307,9 @@ export class Renderer {
             fresnel = mix(0.25, 1.0, pow(1.0 - dot(normal, -incomingRay), 3.0));
           }
           
+          // Pass normal-perturbed coordinate to getSurfaceRayColor? 
+          // For now, simple planar reflection in getSurfaceRayColor uses exact surface pos.
+          
           vec3 reflectedColor = getSurfaceRayColor(position, reflectedRay, abovewaterColor);
           vec3 refractedColor = vec3(0.0);
           if (length(refractedRay) > 0.001) {
@@ -294,6 +328,8 @@ export class Renderer {
     this.scene.add(this.waterMesh);
 
     // --- Sphere ---
+    // Keep sphere mesh for visual debugging or if duck fails to load, but hide it by default?
+    // User wants to REPLACE sphere.
     const sphereGeometry = new THREE.SphereGeometry(1, 10, 10);
     this.sphereMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -332,6 +368,7 @@ export class Renderer {
       `,
     });
     this.sphereMesh = new THREE.Mesh(sphereGeometry, this.sphereMaterial);
+    this.sphereMesh.visible = false; // Hide sphere
     this.scene.add(this.sphereMesh);
 
     // --- Cube (Pool) ---
@@ -354,7 +391,6 @@ export class Renderer {
         `
         varying vec3 vPosition;
         void main() {
-           // Standard vertex shader for box is fine, but we need world position for varying
            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
            vPosition = worldPosition.xyz;
            gl_Position = projectionMatrix * viewMatrix * worldPosition;
@@ -420,29 +456,12 @@ export class Renderer {
               vec3 refractedLight = refract(-light, vec3(0.0, 1.0, 0.0), IOR_AIR / IOR_WATER);
               ray = refract(-light, normal, IOR_AIR / IOR_WATER);
               
-              // We need to map UV (0-1) to world pos based on poolSize
               vec3 rawPos = vec3(uv.x * 2.0 - 1.0, 0.0, uv.y * 2.0 - 1.0);
-              // Scale rawPos by poolSize.x/y ?
-              // But 'project' uses world coordinates.
-              // The simulation (water texture) maps 0-1 to the whole pool surface.
-              // So world X = (uv.x * 2.0 - 1.0) * poolSize.x
-              //    world Z = (uv.y * 2.0 - 1.0) * poolSize.y
-              
-              // However, the original code used 'uv.x*2.0 - 1.0' directly, assuming poolSize=1 (range -1 to 1).
-              // So we should multiply by poolSize.
-              
               rawPos.x *= poolSize.x;
               rawPos.z *= poolSize.y;
               
               oldPos = project(rawPos, refractedLight, refractedLight);
               newPos = project(rawPos + vec3(0.0, info.r, 0.0), ray, refractedLight);
-              
-              // Mapping back to -1 to 1 for rendering to causticTex
-              // gl_Position should correspond to the caustic texture space.
-              // The caustic texture is also mapped to the pool surface.
-              // So we reverse the mapping:
-              // NormalizedPos = newPos / poolSize
-              // gl_Position = ...
               
               gl_Position = vec4(0.75 * (newPos.xz + refractedLight.xz / refractedLight.y) / poolSize.x, 0.0, 1.0);
             }
@@ -487,6 +506,52 @@ export class Renderer {
     this.causticsScene.add(this.causticsMesh);
   }
 
+  loadDuck(url: string) {
+    const loader = new GLTFLoader();
+    loader.load(url, (gltf) => {
+      this.duckMesh = gltf.scene;
+
+      // Center and scale duck if needed
+      const box = new THREE.Box3().setFromObject(this.duckMesh);
+      const size = box.getSize(new THREE.Vector3());
+
+      // Assuming we want the duck to be roughly size of sphere (radius 0.25 -> diameter 0.5)
+      const targetSize = 0.5;
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scale = targetSize / maxDim;
+      this.duckMesh.scale.setScalar(scale);
+
+      // Adjust position so it sits on origin (y=0 is water level)
+      // The model origin might be at feet.
+
+      // Add lighting for the duck
+      // We can add lights to the scene, or the gltf might have lights (usually not).
+      // We'll add some lights to the main scene.
+
+      // Ensure materials are MeshStandardMaterial or similar
+      this.duckMesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          // Ensure material is reactive to light
+          if (child.material) {
+            child.material.needsUpdate = true;
+          }
+        }
+      });
+
+      this.scene.add(this.duckMesh);
+    });
+
+    // Add lighting to scene for Duck
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    this.scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.copy(this.lightDir).multiplyScalar(10);
+    this.scene.add(dirLight);
+  }
+
   updateDimensions(
     width: number,
     length: number,
@@ -500,22 +565,12 @@ export class Renderer {
 
     const poolSizeVal = new THREE.Vector2(width / 2, length / 2);
 
-    // Update Mesh Scales
-    // Water Mesh: PlaneGeometry(2,2) -> Scale to (width/2, 1, length/2) implies size (width, 1, length)
     this.waterMesh.scale.set(width / 2, 1, length / 2);
-
-    // Cube Mesh: BoxGeometry(2,2,2) -> Scale to (width/2, (depth + wallHeight)/2, length/2)
-    // Box center Y needs to be adjusted.
-    // Box range: -1 to 1. Scaled: -(d+w)/2 to (d+w)/2.
-    // Desired range: -depth to wallHeight.
-    // Center of desired range: (wallHeight - depth) / 2.
-    // Height: depth + wallHeight.
 
     const height = depth + wallHeight;
     this.cubeMesh.scale.set(width / 2, Math.max(height / 2, 0.01), length / 2);
     this.cubeMesh.position.y = (wallHeight - depth) / 2;
 
-    // Update Uniforms
     const updateMaterial = (mat: THREE.ShaderMaterial) => {
       mat.uniforms.poolHeight.value = depth;
       mat.uniforms.wallHeight.value = wallHeight;
@@ -541,18 +596,162 @@ export class Renderer {
     renderer.setRenderTarget(null);
   }
 
+  renderDuckReflection(
+    renderer: THREE.WebGLRenderer,
+    mainCamera: THREE.Camera
+  ) {
+    if (!this.duckMesh) return;
+
+    // Setup Reflection Camera
+    // Reflect camera position across Y=0 plane (Water surface at rest)
+    // Actually water surface fluctuates, but planar reflection usually assumes flat plane.
+
+    this.reflectionCamera.copy(mainCamera as THREE.PerspectiveCamera);
+
+    // Reflect position
+    this.reflectionCamera.position.y = -mainCamera.position.y;
+
+    // Reflect view direction?
+    // LookAt logic: Camera looks at target.
+    // If main camera looks at (0, 0.5, 0), reflection camera looks at (0, -0.5, 0).
+    // We can just construct the matrix.
+    // Or simpler: Scale world by (1, -1, 1).
+
+    // Let's use scale approach on a Group containing the Duck.
+    // But Duck is in main scene.
+    // We'll move Duck to a position/scale for reflection rendering?
+    // Or just use the camera technique:
+    // A camera at (x, -y, z) looking at (tx, -ty, tz) produces the reflection image.
+    // But we also need to invert the up vector?
+
+    const p = mainCamera.position;
+    const t = new THREE.Vector3(0, 0.5, 0); // Approx lookat target
+
+    this.reflectionCamera.position.set(p.x, -p.y, p.z);
+    this.reflectionCamera.lookAt(t.x, -t.y, t.z);
+    // We also need to flip the image horizontally?
+    // A mirror reflection flips the image.
+    // Rendering with scale(1, -1, 1) on camera is tricky in Three.js (projection matrix).
+
+    // Standard Planar Reflection in Three.js often uses a separate Scene or "virtual" object.
+
+    // Let's try: Hide everything except Duck.
+    this.waterMesh.visible = false;
+    this.cubeMesh.visible = false; // Walls reflection handled by raytracing, so we don't need them in texture?
+    this.sphereMesh.visible = false;
+
+    // If we only render the Duck, we get a texture with just the duck.
+    // We need to clear with alpha=0.
+
+    // Camera Up vector needs to be flipped?
+    // Main camera up is usually (0,1,0).
+    // Reflection camera up should be (0,-1,0)?
+    // this.reflectionCamera.up.set(0, -1, 0); // Wait, if we flip Y, up flips too.
+    // But three.js lookAt recomputes matrix.
+
+    // Let's use the GL matrix approach for reflection matrix.
+    // Reflect across Y=0: Scale(1, -1, 1).
+    // If we apply this to the Scene, we can use the Main Camera!
+    // But we can't easily apply to Scene without affecting Main render.
+    // We can apply to Duck Mesh temporarily.
+
+    const oldScale = this.duckMesh.scale.clone();
+    const oldPos = this.duckMesh.position.clone();
+
+    // Reflect the object across water plane.
+    // Duck is at (x, y, z). Reflected duck is at (x, -y, z).
+    // And we need to wind triangles correctly? (Culling)
+    // If we scale Y by -1, faces invert. We need to invert culling or use DoubleSide.
+
+    this.duckMesh.position.y = -oldPos.y;
+    this.duckMesh.scale.y = -oldScale.y;
+
+    // Render
+    renderer.setRenderTarget(this.duckReflectionTex);
+    renderer.setClearColor(0x000000, 0); // Transparent background
+    renderer.clear();
+
+    // We need to render the duck faces that are usually hidden?
+
+    // If we just change camera position to (x, -y, z) and look at (tx, -ty, tz),
+    // we are looking UP at the duck from below.
+    // This is what the water "sees" (reflection).
+    // So we don't need to invert the Duck model. We just move the camera.
+
+    // Reset Duck changes (we won't apply them)
+    this.duckMesh.position.copy(oldPos);
+    this.duckMesh.scale.copy(oldScale);
+
+    // Correct approach: Mirror Camera
+    // Main Camera: (x, y, z).
+    // Mirror Camera: (x, -y, z).
+    // LookAt: (0, 0.5, 0) -> (0, -0.5, 0).
+    // Up: (0, 1, 0) -> (0, -1, 0).
+    // And we need to render the Duck (which is at +y).
+
+    this.reflectionCamera.position.set(p.x, -p.y, p.z);
+    this.reflectionCamera.up.set(0, -1, 0);
+    this.reflectionCamera.lookAt(0, -0.5, 0); // Rough approximation
+    this.reflectionCamera.updateMatrixWorld();
+
+    // Calculate Texture Matrix for Shader
+    // We need to map World Position -> Texture UV.
+    // TexMatrix = Bias * Projection * View
+    const textureMatrix = new THREE.Matrix4();
+    textureMatrix.set(
+      0.5,
+      0.0,
+      0.0,
+      0.5,
+      0.0,
+      0.5,
+      0.0,
+      0.5,
+      0.0,
+      0.0,
+      0.5,
+      0.5,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    );
+    textureMatrix.multiply(this.reflectionCamera.projectionMatrix);
+    textureMatrix.multiply(this.reflectionCamera.matrixWorldInverse);
+    this.textureMatrix.copy(textureMatrix);
+
+    renderer.render(this.scene, this.reflectionCamera);
+
+    renderer.setRenderTarget(null);
+
+    // Restore visibility
+    this.waterMesh.visible = true;
+    this.cubeMesh.visible = true;
+    // this.sphereMesh.visible = true;
+  }
+
   render(
     renderer: THREE.WebGLRenderer,
     camera: THREE.Camera,
     water: Water,
     sky: THREE.Texture
   ): void {
+    // 1. Update Duck Position from Physics (represented by sphereCenter)
+    if (this.duckMesh) {
+      this.duckMesh.position.copy(this.sphereCenter);
+      // Maybe add some wobbling or rotation based on velocity?
+
+      // Render Reflection Pass
+      this.renderDuckReflection(renderer, camera);
+    }
+
     // Update uniforms
     this.waterMaterial.uniforms["water"].value = water.textureA.texture;
     this.waterMaterial.uniforms["sky"].value = sky;
     this.waterMaterial.uniforms["eye"].value = camera.position;
     this.waterMaterial.uniforms["sphereCenter"].value = this.sphereCenter;
     this.waterMaterial.uniforms["sphereRadius"].value = this.sphereRadius;
+    this.waterMaterial.uniforms["textureMatrix"].value = this.textureMatrix;
 
     this.sphereMaterial.uniforms["water"].value = water.textureA.texture;
     this.sphereMaterial.uniforms["sphereCenter"].value = this.sphereCenter;
