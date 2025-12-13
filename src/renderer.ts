@@ -128,10 +128,7 @@ export class Renderer {
   duckMesh: THREE.Object3D | null = null;
 
   // 渲染纹理 Render Targets
-  duckReflectionTex: THREE.WebGLRenderTarget;
   duckRefractionTex: THREE.WebGLRenderTarget;
-  reflectionCamera: THREE.PerspectiveCamera;
-  textureMatrix: THREE.Matrix4 = new THREE.Matrix4();
   resolution: THREE.Vector2 = new THREE.Vector2();
 
   poolWidth: number = 2;
@@ -157,21 +154,12 @@ export class Renderer {
       magFilter: THREE.LinearFilter,
     });
 
-    // 鸭子反射纹理 (用于水面反光)
-    this.duckReflectionTex = new THREE.WebGLRenderTarget(512, 512, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat,
-    });
-
     // 鸭子折射纹理 (用于水下透视)
     this.duckRefractionTex = new THREE.WebGLRenderTarget(1024, 1024, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
     });
-
-    this.reflectionCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
 
     const poolSizeVal = new THREE.Vector2(
       this.poolWidth / 2,
@@ -194,10 +182,8 @@ export class Renderer {
         poolHeight: { value: this.poolHeight },
         wallHeight: { value: this.wallHeight },
         poolSize: { value: poolSizeVal },
-        duckReflection: { value: this.duckReflectionTex.texture },
         duckRefraction: { value: this.duckRefractionTex.texture }, // 传入折射纹理
         resolution: { value: this.resolution },
-        textureMatrix: { value: new THREE.Matrix4() },
       },
       vertexShader: `
         uniform sampler2D water;
@@ -219,48 +205,24 @@ export class Renderer {
         uniform vec3 eye;
         varying vec3 vPosition;
         uniform sampler2D sky;
-        uniform sampler2D duckReflection;
-        uniform mat4 textureMatrix;
         
         vec3 getSurfaceRayColor(vec3 origin, vec3 ray, vec3 waterColor) {
             vec3 color;
-            
-            // 强制忽略 Shader 中的球体渲染，以只显示鸭子
-            // float q = intersectSphere(origin, ray, sphereCenter, sphereRadius);
-            float q = 1.0e6;
-            
-            // 原球体绘制逻辑 (如果 q < 1.0e6) 已被跳过
-            
-            bool hitWall = false;
-            // 射线追踪墙壁
-            if (q >= 1.0e6) {
-              if (ray.y < 0.0) {
-                vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
-                color = getWallColor(origin + ray * t.y);
-                hitWall = true;
+            if (ray.y < 0.0) {
+              vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
+              color = getWallColor(origin + ray * t.y);
+            } else {
+              vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
+              vec3 hit = origin + ray * t.y;
+              if (hit.y < wallHeight - 0.001) {
+                color = getWallColor(hit);
               } else {
-                vec2 t = intersectCube(origin, ray, vec3(-poolSize.x, -poolHeight, -poolSize.y), vec3(poolSize.x, wallHeight, poolSize.y));
-                vec3 hit = origin + ray * t.y;
-                if (hit.y < wallHeight - 0.001) {
-                  color = getWallColor(hit);
-                  hitWall = true;
-                } else {
-                  vec2 uv = ray.xz * 0.5 + 0.5;
-                  color = texture2D(sky, uv).rgb;
-                  color += vec3(pow(max(0.0, dot(light, ray)), 5000.0)) * vec3(10.0, 8.0, 6.0);
-                }
+                vec2 uv = ray.xz * 0.5 + 0.5;
+                color = texture2D(sky, uv).rgb;
+                color += vec3(pow(max(0.0, dot(light, ray)), 5000.0)) * vec3(10.0, 8.0, 6.0);
               }
             }
             
-            // --- 鸭子反射 (Reflection) ---
-            vec4 clipPos = textureMatrix * vec4(origin, 1.0);
-            vec3 clipPos3 = clipPos.xyz / clipPos.w;
-            if (clipPos3.z > 0.0 && clipPos3.z < 1.0) { 
-                 vec2 reflectionUV = clipPos3.xy * 0.5 + 0.5;
-                 vec4 duckCol = texture2D(duckReflection, reflectionUV);
-                 color = mix(color, duckCol.rgb, duckCol.a);
-            }
-
             if (ray.y < 0.0) color *= waterColor;
             return color;
         }
@@ -559,60 +521,6 @@ export class Renderer {
     renderer.setRenderTarget(null);
   }
 
-  renderDuckReflection(
-    renderer: THREE.WebGLRenderer,
-    mainCamera: THREE.Camera
-  ) {
-    if (!this.duckMesh) return;
-    this.reflectionCamera.copy(mainCamera as THREE.PerspectiveCamera);
-    const p = mainCamera.position;
-    this.reflectionCamera.position.set(p.x, -p.y, p.z);
-    this.reflectionCamera.up.set(0, -1, 0);
-    this.reflectionCamera.lookAt(new THREE.Vector3(0, -0.5, 0));
-    this.reflectionCamera.updateMatrixWorld();
-
-    const textureMatrix = new THREE.Matrix4();
-    textureMatrix.set(
-      0.5,
-      0.0,
-      0.0,
-      0.5,
-      0.0,
-      0.5,
-      0.0,
-      0.5,
-      0.0,
-      0.0,
-      0.5,
-      0.5,
-      0.0,
-      0.0,
-      0.0,
-      1.0
-    );
-    textureMatrix.multiply(this.reflectionCamera.projectionMatrix);
-    textureMatrix.multiply(this.reflectionCamera.matrixWorldInverse);
-    this.textureMatrix.copy(textureMatrix);
-
-    const oldVisible = {
-      water: this.waterMesh.visible,
-      cube: this.cubeMesh.visible,
-      sphere: this.sphereMesh.visible,
-    };
-    this.waterMesh.visible = false;
-    this.cubeMesh.visible = false;
-    this.sphereMesh.visible = false;
-
-    renderer.setRenderTarget(this.duckReflectionTex);
-    renderer.setClearColor(0x000000, 0);
-    renderer.clear();
-    renderer.render(this.scene, this.reflectionCamera);
-    renderer.setRenderTarget(null);
-
-    this.waterMesh.visible = oldVisible.water;
-    this.cubeMesh.visible = oldVisible.cube;
-  }
-
   // 新增：渲染折射纹理 (从主相机视角渲染鸭子)
   renderDuckRefraction(renderer: THREE.WebGLRenderer, camera: THREE.Camera) {
     if (!this.duckMesh) return;
@@ -652,10 +560,7 @@ export class Renderer {
     if (this.duckMesh) {
       this.duckMesh.position.copy(this.sphereCenter);
 
-      // 1. 渲染反射 (用于水面上看)
-      this.renderDuckReflection(renderer, camera);
-
-      // 2. 渲染折射 (用于水下看，或者透过水面看鸭子身体)
+      // 渲染折射 (用于透过水面看鸭子身体)
       this.renderDuckRefraction(renderer, camera);
     }
 
@@ -663,7 +568,7 @@ export class Renderer {
     const canvas = renderer.domElement;
     this.resolution.set(canvas.width, canvas.height);
 
-    // 确保折射纹理尺寸匹配屏幕 (性能优化时可以减小)
+    // 确保折射纹理尺寸匹配屏幕
     if (
       this.duckRefractionTex.width !== canvas.width ||
       this.duckRefractionTex.height !== canvas.height
@@ -676,8 +581,6 @@ export class Renderer {
     this.waterMaterial.uniforms["eye"].value = camera.position;
     this.waterMaterial.uniforms["sphereCenter"].value = this.sphereCenter;
     this.waterMaterial.uniforms["sphereRadius"].value = this.sphereRadius;
-    this.waterMaterial.uniforms["textureMatrix"].value = this.textureMatrix;
-    // 更新新增的 uniform
     this.waterMaterial.uniforms["duckRefraction"].value =
       this.duckRefractionTex.texture;
     this.waterMaterial.uniforms["resolution"].value = this.resolution;
