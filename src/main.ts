@@ -219,6 +219,31 @@ window.onload = function () {
   renderer = new Renderer();
   renderer.loadDuck("/duck.glb");
 
+  // 鼠标或倾斜设备时的回调（-1 to 1）
+  const onMove = (ndcX: number, ndcY: number) => {
+    // todo 一些交互
+  };
+
+  window.addEventListener("mousemove", (e) => {
+    const x = (e.clientX / window.innerWidth) * 2 - 1;
+    const y = -(e.clientY / window.innerHeight) * 2 + 1;
+    onMove(x, y);
+  });
+
+  window.addEventListener("deviceorientation", (e) => {
+    // Use gamma (left/right) for X and beta (front/back) for Z
+    if (e.gamma === null || e.beta === null) return;
+
+    const maxTilt = 30; // degrees
+    const gamma = Math.min(Math.max(e.gamma, -maxTilt), maxTilt);
+    const beta = Math.min(Math.max(e.beta, -maxTilt), maxTilt);
+
+    const ndcX = gamma / maxTilt;
+    const ndcY = -beta / maxTilt; // Tilt forward (positive beta) -> Top of screen (positive Y)
+
+    onMove(ndcX, ndcY);
+  });
+
   const skyImg = getEl("sky");
   skyTexture = new THREE.Texture(skyImg);
   skyTexture.wrapS = THREE.ClampToEdgeWrapping;

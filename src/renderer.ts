@@ -127,6 +127,7 @@ export class Renderer {
   scene: THREE.Scene;
 
   duckMesh: THREE.Object3D | null = null;
+  dirLight: THREE.DirectionalLight | null = null;
 
   // 渲染纹理 Render Targets
   duckRefractionTex: THREE.WebGLRenderTarget;
@@ -147,7 +148,7 @@ export class Renderer {
     this.tileTexture.wrapT = THREE.RepeatWrapping;
     this.tileTexture.minFilter = THREE.LinearMipMapLinearFilter;
 
-    this.lightDir = new THREE.Vector3(2.0, 2.0, -1.0).normalize();
+    this.lightDir = new THREE.Vector3(-1, 1, 1).normalize();
 
     this.causticTex = new THREE.WebGLRenderTarget(1024, 1024, {
       type: THREE.FloatType,
@@ -485,9 +486,16 @@ export class Renderer {
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     this.scene.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-    dirLight.position.copy(this.lightDir).multiplyScalar(10);
-    this.scene.add(dirLight);
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    this.dirLight.position.copy(this.lightDir).multiplyScalar(10);
+    this.scene.add(this.dirLight);
+  }
+
+  updateLightDirection(x: number, y: number, z: number) {
+    this.lightDir.set(x, y, z).normalize();
+    if (this.dirLight) {
+      this.dirLight.position.copy(this.lightDir).multiplyScalar(10);
+    }
   }
 
   updateDimensions(w: number, l: number, d: number, wh: number) {
