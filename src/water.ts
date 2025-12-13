@@ -124,6 +124,7 @@ export class Water {
         oldCenter: { value: new THREE.Vector3() },
         newCenter: { value: new THREE.Vector3() },
         radius: { value: 0 },
+        strength: { value: 0.01 },
       },
       vertexShader: vertexShader,
       fragmentShader: `
@@ -131,6 +132,7 @@ export class Water {
         uniform vec3 oldCenter;
         uniform vec3 newCenter;
         uniform float radius;
+        uniform float strength;
         varying vec2 coord;
         
         float volumeInSphere(vec3 center) {
@@ -139,7 +141,7 @@ export class Water {
           float dy = exp(-pow(t * 1.5, 6.0));
           float ymin = min(0.0, center.y - dy);
           float ymax = min(max(0.0, center.y + dy), ymin + 2.0 * dy);
-          return (ymax - ymin) * 0.1;
+          return (ymax - ymin) * strength;
         }
         
         void main() {
@@ -220,7 +222,8 @@ export class Water {
     renderer: THREE.WebGLRenderer,
     oldCenter: THREE.Vector3,
     newCenter: THREE.Vector3,
-    radius: number
+    radius: number,
+    strength: number
   ): void {
     // Normalize coordinates
     const scaleX = this.poolWidth / 2;
@@ -240,6 +243,7 @@ export class Water {
       oldCenter: nOld,
       newCenter: nNew,
       radius: nRadius,
+      strength,
     });
   }
 

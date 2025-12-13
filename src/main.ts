@@ -49,6 +49,7 @@ let containerHeight = 1.4; // Total height (walls)
 let poolDepth = 0; // Current water depth (calculated)
 let waterFillRatio = 0.7; // 0 to 1
 let sphereFloatRatio = 0.1; // 0 to 1 (Ratio of diameter that is above water at equilibrium)
+let sphereImpactStrength = 0.01; // New parameter to control impact force
 
 function updatePoolDimensions() {
   const waterDepth = containerHeight * waterFillRatio;
@@ -145,6 +146,17 @@ createInput(
   0.0,
   0.9,
   0.05
+);
+
+createInput(
+  "Impact Force",
+  sphereImpactStrength,
+  (val) => {
+    sphereImpactStrength = val;
+  },
+  0.01,
+  1.0,
+  0.01
 );
 
 window.onload = function () {
@@ -466,7 +478,13 @@ window.onload = function () {
     // BUT: In JS, if we pass references to uniforms, we must be careful.
     // The issue is likely that water.moveSphere uses the material uniforms.
 
-    water.moveSphere(sceneRenderer, oldCenter, center, radius);
+    water.moveSphere(
+      sceneRenderer,
+      oldCenter,
+      center,
+      radius,
+      sphereImpactStrength
+    );
     oldCenter.copy(center);
 
     // Update the water simulation and graphics
