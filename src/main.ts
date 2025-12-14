@@ -31,7 +31,6 @@ let oldCenter: THREE.Vector3;
 let velocity: THREE.Vector3;
 let gravity: THREE.Vector3;
 let radius: number;
-let paused = false;
 let mousePoint = new THREE.Vector3(100, 100, 100);
 
 // Three.js Core
@@ -96,8 +95,16 @@ window.onload = function () {
       "Rendering to floating-point textures is required but not supported"
     );
   }
+
   // Linear filtering for float textures is also needed
-  sceneRenderer.extensions.get("OES_texture_float_linear");
+  let textureType: THREE.TextureDataType = THREE.FloatType;
+  if (!sceneRenderer.extensions.get("OES_texture_float_linear")) {
+    textureType = THREE.HalfFloatType;
+  }
+
+  water = new Water(textureType);
+  renderer = new Renderer(textureType);
+  renderer.loadDuck("/duck.glb");
 
   function getEl(id: string): HTMLImageElement {
     const el = document.getElementById(id) as HTMLImageElement;
@@ -106,10 +113,6 @@ window.onload = function () {
     }
     return el;
   }
-
-  water = new Water();
-  renderer = new Renderer();
-  renderer.loadDuck("/duck.glb");
 
   const onMove = (ndcX: number, ndcY: number) => {
     const raycaster = new THREE.Raycaster();
@@ -214,10 +217,8 @@ window.onload = function () {
   let prevTime = new Date().getTime();
   function animate(): void {
     const nextTime = new Date().getTime();
-    if (!paused) {
-      update((nextTime - prevTime) / 1000);
-      draw();
-    }
+    update((nextTime - prevTime) / 1000);
+    draw();
     prevTime = nextTime;
     requestAnimationFrame(animate);
   }
@@ -300,10 +301,6 @@ window.onload = function () {
             0.03,
             0.02
           );
-          if (paused) {
-            water.updateNormals(sceneRenderer);
-            renderer.updateCaustics(sceneRenderer, water);
-          }
         }
         if (fromTouch) {
           x = (x / window.innerWidth) * 2 - 1;
@@ -334,7 +331,6 @@ window.onload = function () {
             Math.min(poolLength / 2 - radius, center.z)
           );
           prevHit = nextHit;
-          if (paused) renderer.updateCaustics(sceneRenderer, water);
         }
         break;
       }
@@ -347,7 +343,6 @@ window.onload = function () {
     }
     oldX = x;
     oldY = y;
-    if (paused) draw();
   }
 
   function stopDrag(): void {

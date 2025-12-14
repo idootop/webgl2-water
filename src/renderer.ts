@@ -142,7 +142,7 @@ export class Renderer {
   poolHeight: number = 2;
   wallHeight: number = 1;
 
-  constructor() {
+  constructor(textureType: THREE.TextureDataType) {
     this.scene = new THREE.Scene();
 
     const loader = new THREE.TextureLoader();
@@ -155,7 +155,7 @@ export class Renderer {
     this.lightDir = new THREE.Vector3(-1, 1, 1).normalize();
 
     this.causticTex = new THREE.WebGLRenderTarget(1024, 1024, {
-      type: THREE.FloatType,
+      type: textureType,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
     });

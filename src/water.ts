@@ -25,7 +25,7 @@ export class Water {
   poolWidth: number = 2;
   poolLength: number = 2;
 
-  constructor() {
+  constructor(textureType: THREE.TextureDataType) {
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.camera.position.z = 0.5; // Ensure camera is backed off to see the mesh at Z=0
     this.scene = new THREE.Scene();
@@ -33,7 +33,7 @@ export class Water {
     const geometry = new THREE.PlaneGeometry(2, 2);
 
     this.textureA = new THREE.WebGLRenderTarget(1024, 1024, {
-      type: THREE.FloatType,
+      type: textureType,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
