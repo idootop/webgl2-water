@@ -2,11 +2,12 @@
 
 > A **Poolcore / Cleancore** aesthetic visual experience built with Three.js and WebGL 2.0.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+[![Live Demo](https://img.shields.io/badge/Live-Demo-blue.svg)](https://idootop.github.io/webgl2-water)
 ![WebGL](https://img.shields.io/badge/WebGL-2.0-brightgreen.svg)
-![Aesthetics](https://img.shields.io/badge/Aesthetics-Poolcore%20%7C%20Cleancore-pink.svg)
+![Aesthetics](https://img.shields.io/badge/Aesthetics-Poolcore%20%7C%20Cleancore-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-![](./public/demo.webp)
+[![](./public/demo.webp)](https://idootop.github.io/webgl2-water)
 
 ## 🌊 Overview
 
@@ -36,7 +37,6 @@ This project is a tribute to and evolution of the work by [Evan Wallace](http://
 
 - Original Repo: [evanw/webgl-water](https://github.com/evanw/webgl-water)
 - Original Demo: [http://madebyevan.com/webgl-water/](http://madebyevan.com/webgl-water/)
-
 
 ## 📄 License
 
