@@ -51,7 +51,7 @@ export class Application {
     this.setupEvents();
 
     // Initial Setup
-    this.renderer.loadDuck("/duck.glb");
+    this.renderer.loadDuck("duck.glb");
     document.body.appendChild(this.sceneRenderer.domElement);
 
     this.loadSkyTexture();
