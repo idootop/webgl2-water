@@ -2,7 +2,7 @@
   "name": "webgl2-water",
   "private": true,
   "version": "0.0.0",
-  "description": "WebGL 2.0 Water Demo",
+  "description": "A Poolcore / Cleancore aesthetic Three.js water demo",
   "type": "module",
   "scripts": {
     "dev": "vite",
