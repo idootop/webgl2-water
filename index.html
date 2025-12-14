@@ -1,52 +1,19 @@
-<!--
-WebGL Water
-http://madebyevan.com/webgl-water/
-
-Copyright 2011 Evan Wallace
-Released under the MIT license
--->
-
 <!DOCTYPE html>
 <html>
 
 <head>
-  <title>WebGL 2.0 Water</title>
+  <title>WebGL 2.0 Water Demo</title>
   <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
   <style type="text/css">
     body {
-      font: 13px/140% Arial, sans-serif;
       background: black;
       color: white;
       overflow: hidden;
-    }
-
-    a {
-      color: inherit;
-      cursor: pointer;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     }
 
     img {
       display: none;
-    }
-
-    ul {
-      padding: 0 0 0 20px;
-    }
-
-    h1 {
-      font: bold italic 30px/30px Georgia;
-      text-align: center;
-    }
-
-    h2 {
-      font: bold italic 17px/17px Georgia;
-      padding-top: 10px;
-    }
-
-    small {
-      display: block;
-      font-size: 11px;
-      line-height: 15px;
     }
 
     canvas {
@@ -56,20 +23,17 @@ Released under the MIT license
     }
 
     #loading {
-      position: absolute;
-      left: 0;
+      position: fixed;
       top: 50%;
-      right: 300px;
-      text-align: center;
-      margin-top: -8px;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-weight: 500;
     }
   </style>
 </head>
 
 <body>
   <div id="loading">Loading...</div>
-
-  </div>
   <img id="tiles" src="/tiles.jpg">
   <img id="sky" src="/sky.jpg">
 
